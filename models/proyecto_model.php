@@ -2274,12 +2274,12 @@ function obtenerTipoActaPorCodigo($codigo) {
 
 
 /**
- * Crea una nueva acta para un proyecto y su documento asociado
- * @param array $datos Datos del acta y documento
- * @param string $archivo_tmp Ruta temporal del archivo subido
- * @return bool|array True si fue exitoso, o array con error si falló
+ * Crea una nueva acta de proyecto y sube el documento asociado al servidor remoto
+ * @param array $datos Datos del acta
+ * @param string $archivo_tmp Ruta temporal del archivo
+ * @return int|array ID del acta creada o array con error
  */
-function crearActaProyecto($datos, $archivo_tmp = null) {
+function crearActaProyecto($datos, $archivo_tmp) {
     try {
         // Validar datos obligatorios
         if (empty($datos['anio_pro']) || empty($datos['numero_pro']) || 
@@ -2287,424 +2287,208 @@ function crearActaProyecto($datos, $archivo_tmp = null) {
             return ['error' => 'Faltan datos obligatorios para crear el acta'];
         }
         
-        // Formatear fecha si es necesario
-        if (!is_string($datos['fecha_acta'])) {
-            $fecha_acta = date('Y-m-d', strtotime($datos['fecha_acta']));
-        } else {
-            $fecha_acta = $datos['fecha_acta'];
-        }
-        
-        // Obtener siguiente número de acta
-        $numero_acta = obtenerSiguienteNumeroActa($datos['anio_pro'], $datos['numero_pro']);
-        
         // Obtener conexión
         $conn = conectarOracle();
+        
+        // Obtener el siguiente número de acta para este proyecto
+        $numero_acta = obtenerSiguienteNumeroActa($datos['anio_pro'], $datos['numero_pro']);
         
         // Iniciar transacción
         oci_set_action($conn, 'crearActaProyecto');
         
-        // 1. Insertar en la tabla ACTA_PROYECTO - REMOVIENDO FECHA_REGISTRO ya que no existe
+        // 1. Insertar en la tabla ACTA_PROYECTO
         $sql = "INSERT INTO ACTA_PROYECTO (
-            ANIO_PRO, NUMERO_PRO, NUMERO_ACTA, TIPO_ACTA, 
-            FECHA_ACTA, OBSERVA, USUARIO, ESTADO
-        ) VALUES (
-            :anio_pro, :numero_pro, :numero_acta, :tipo_acta,
-            TO_DATE(:fecha_acta, 'YYYY-MM-DD'), :observa, :usuario, 'A'
-        )";
+                    ANIO_PRO, NUMERO_PRO, NUMERO_ACTA, TIPO_ACTA,
+                    FECHA_ACTA, OBSERVA, ESTADO, USUARIO
+                ) VALUES (
+                    :anio_pro, :numero_pro, :numero_acta, :tipo_acta,
+                    TO_DATE(:fecha_acta, 'YYYY-MM-DD'), :observa, 'A', :usuario
+                )";
         
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        
-        // Vincular parámetros
-        oci_bind_by_name($stid, ':anio_pro', $datos['anio_pro']);
-        oci_bind_by_name($stid, ':numero_pro', $datos['numero_pro']);
-        oci_bind_by_name($stid, ':numero_acta', $numero_acta);
-        oci_bind_by_name($stid, ':tipo_acta', $datos['tipo_acta']);
-        oci_bind_by_name($stid, ':fecha_acta', $fecha_acta);
-        oci_bind_by_name($stid, ':observa', $datos['observa']);
-        oci_bind_by_name($stid, ':usuario', $datos['usuario']);
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid, OCI_NO_AUTO_COMMIT);
-        if (!$r) {
-            $e = oci_error($stid);
-            oci_rollback($conn);
-            return ['error' => "Error al insertar en ACTA_PROYECTO: " . $e['message']];
+        $stmt = oci_parse($conn, $sql);
+        if (!$stmt) {
+            $e = oci_error($conn);
+            error_log("Error al preparar inserción en ACTA_PROYECTO: " . $e['message']);
+            return ['error' => $e['message']];
         }
         
-        // Si se proporcionó un archivo, procesar documento
-        if ($archivo_tmp && file_exists($archivo_tmp)) {
-            // Obtener siguiente número de documento
-            $numero_doc = obtenerSiguienteNumeroDocumento($datos['anio_pro'], $datos['numero_pro']);
-            
-            // Obtener descripción del tipo de acta para el nombre del archivo
+        // Vincular parámetros
+        oci_bind_by_name($stmt, ':anio_pro', $datos['anio_pro']);
+        oci_bind_by_name($stmt, ':numero_pro', $datos['numero_pro']);
+        oci_bind_by_name($stmt, ':numero_acta', $numero_acta);
+        oci_bind_by_name($stmt, ':tipo_acta', $datos['tipo_acta']);
+        oci_bind_by_name($stmt, ':fecha_acta', $datos['fecha_acta']);
+        oci_bind_by_name($stmt, ':observa', $datos['observa']);
+        oci_bind_by_name($stmt, ':usuario', $datos['usuario']);
+        
+        // Ejecutar la inserción
+        $r = oci_execute($stmt, OCI_NO_AUTO_COMMIT);
+        if (!$r) {
+            $e = oci_error($stmt);
+            error_log("Error al insertar en ACTA_PROYECTO: " . $e['message']);
+            oci_rollback($conn);
+            return ['error' => $e['message']];
+        }
+        
+        // 2. Gestionar el documento
+        if (!empty($archivo_tmp) && file_exists($archivo_tmp)) {
+            // Obtener tipo de acta
             $tipo_acta_info = obtenerTipoActaPorCodigo($datos['tipo_acta']);
             $tipo_acta_desc = $tipo_acta_info ? strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $tipo_acta_info['descripcion'])) : 'acta';
             
-            // Generar nombre de archivo: ANIO_NUMERO_TIPOACTA_SECUENCIAL.ext
-            $extension = pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION);
-            $nombre_archivo = $datos['anio_pro'] . '_' . $datos['numero_pro'] . '_' . $tipo_acta_desc . '_' . $numero_doc . '.' . $extension;
+            // Generar nombre único para el archivo
+            $extension = strtolower(pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION));
+            $nombre_archivo = $datos['anio_pro'] . '_' . $datos['numero_pro'] . '_' . $tipo_acta_desc . '_' . $numero_acta . '.' . $extension;
             
-            // Ruta para guardar el archivo
-            $directorio_destino = 'uploads/actas/';
-            if (!is_dir($directorio_destino)) {
-                mkdir($directorio_destino, 0755, true);
-            }
+            // Configuración para la conexión SSH2
+            $servidor = '200.69.103.17';
+            $puerto = 22;
+            $ssh_usuario = 'oracle';
+            $ssh_password = 'QDameco2016';
+            $ruta_destino = '/var/www/html/idexud/siexud/actasproy/upload/';
             
-            $ruta_destino = $directorio_destino . $nombre_archivo;
-            
-            // Mover el archivo a la ubicación final
-            if (move_uploaded_file($archivo_tmp, $ruta_destino)) {
-                // 2. Insertar en la tabla DOCUMENTO_PROYECTO
-                $sql_doc = "INSERT INTO DOCUMENTO_PROYECTO (
-                                ANIO_PRO, NUMERO_PRO, NUMERO_DOC, TIPO_DOC, 
-                                FECHA_DOC, ARCHIVO, ESTADO, USUARIO
-                            ) VALUES (
-                                :anio_pro, :numero_pro, :numero_doc, :tipo_doc, 
-                                TO_DATE(:fecha_doc, 'YYYY-MM-DD'), 
-                                :archivo, 'A', :usuario
-                            )";
+            // Comprobar que existe la extensión SSH2
+            if (function_exists('ssh2_connect')) {
+                // Conectar al servidor
+                $conexion = ssh2_connect($servidor, $puerto);
                 
-                // Preparar consulta
-                $stid_doc = oci_parse($conn, $sql_doc);
-                
-                // Vincular parámetros
-                oci_bind_by_name($stid_doc, ':anio_pro', $datos['anio_pro']);
-                oci_bind_by_name($stid_doc, ':numero_pro', $datos['numero_pro']);
-                oci_bind_by_name($stid_doc, ':numero_doc', $numero_doc);
-                oci_bind_by_name($stid_doc, ':tipo_doc', $datos['tipo_acta']); // Usamos el mismo tipo para acta y documento
-                oci_bind_by_name($stid_doc, ':fecha_doc', $fecha_acta);
-                oci_bind_by_name($stid_doc, ':archivo', $nombre_archivo);
-                oci_bind_by_name($stid_doc, ':usuario', $datos['usuario']);
-                
-                // Ejecutar consulta
-                $r_doc = oci_execute($stid_doc, OCI_NO_AUTO_COMMIT);
-                if (!$r_doc) {
-                    $e = oci_error($stid_doc);
+                if ($conexion) {
+                    // Autenticar
+                    if (ssh2_auth_password($conexion, $ssh_usuario, $ssh_password)) {
+                        // Iniciar SFTP
+                        $sftp = ssh2_sftp($conexion);
+                        
+                        // Ruta completa de destino
+                        $ruta_completa = $ruta_destino . $nombre_archivo;
+                        
+                        // Abrir flujo para escritura
+                        $flujo_remoto = fopen("ssh2.sftp://{$sftp}{$ruta_completa}", 'w');
+                        
+                        if ($flujo_remoto) {
+                            // Leer archivo local
+                            $contenido = file_get_contents($archivo_tmp);
+                            
+                            // Escribir en archivo remoto
+                            if (fwrite($flujo_remoto, $contenido) !== false) {
+                                // Subida exitosa, ahora insertar en DOCUMENTO_PROYECTO
+                                $sql_doc = "INSERT INTO DOCUMENTO_PROYECTO (
+                                            ANIO_PRO, NUMERO_PRO, NUMERO_DOC, TIPO_DOC,
+                                            FECHA_DOC, ARCHIVO, ESTADO, USUARIO
+                                        ) VALUES (
+                                            :anio_pro, :numero_pro, :numero_doc, :tipo_doc,
+                                            TO_DATE(:fecha_doc, 'YYYY-MM-DD'), :archivo, 'A', :usuario
+                                        )";
+                                
+                                $stmt_doc = oci_parse($conn, $sql_doc);
+                                
+                                // Usar el mismo número y tipo para documento y acta
+                                oci_bind_by_name($stmt_doc, ':anio_pro', $datos['anio_pro']);
+                                oci_bind_by_name($stmt_doc, ':numero_pro', $datos['numero_pro']);
+                                oci_bind_by_name($stmt_doc, ':numero_doc', $numero_acta);
+                                oci_bind_by_name($stmt_doc, ':tipo_doc', $datos['tipo_acta']);
+                                oci_bind_by_name($stmt_doc, ':fecha_doc', $datos['fecha_acta']);
+                                oci_bind_by_name($stmt_doc, ':archivo', $nombre_archivo);
+                                oci_bind_by_name($stmt_doc, ':usuario', $datos['usuario']);
+                                
+                                $r_doc = oci_execute($stmt_doc, OCI_NO_AUTO_COMMIT);
+                                if (!$r_doc) {
+                                    $e = oci_error($stmt_doc);
+                                    error_log("Error al insertar en DOCUMENTO_PROYECTO: " . $e['message']);
+                                    oci_rollback($conn);
+                                    return ['error' => "Error al insertar en DOCUMENTO_PROYECTO: " . $e['message']];
+                                }
+                                
+                                oci_free_statement($stmt_doc);
+                            } else {
+                                error_log("Error al escribir el archivo en el servidor remoto");
+                                oci_rollback($conn);
+                                return ['error' => "Error al escribir el archivo en el servidor remoto"];
+                            }
+                            
+                            fclose($flujo_remoto);
+                        } else {
+                            error_log("No se pudo abrir el archivo en el servidor remoto");
+                            oci_rollback($conn);
+                            return ['error' => "No se pudo abrir el archivo en el servidor remoto"];
+                        }
+                    } else {
+                        error_log("Error de autenticación SSH");
+                        oci_rollback($conn);
+                        return ['error' => "Error de autenticación con el servidor de archivos"];
+                    }
+                } else {
+                    error_log("No se pudo conectar al servidor SSH");
                     oci_rollback($conn);
-                    @unlink($ruta_destino); // Eliminar el archivo si falla la inserción
-                    return ['error' => "Error al insertar en DOCUMENTO_PROYECTO: " . $e['message']];
+                    return ['error' => "No se pudo conectar al servidor de archivos"];
+                }
+            } else {
+                error_log("La extensión SSH2 no está instalada en PHP");
+                
+                // Plan alternativo: guardar localmente
+                $dir_local = 'uploads/actas/';
+                if (!is_dir($dir_local)) {
+                    mkdir($dir_local, 0755, true);
                 }
                 
-                oci_free_statement($stid_doc);
-            } else {
-                // Si falla al mover el archivo
-                oci_rollback($conn);
-                return ['error' => "Error al mover el archivo subido"];
+                $ruta_local = $dir_local . $nombre_archivo;
+                
+                if (move_uploaded_file($archivo_tmp, $ruta_local)) {
+                    // Guardar en la base de datos
+                    $sql_doc = "INSERT INTO DOCUMENTO_PROYECTO (
+                                    ANIO_PRO, NUMERO_PRO, NUMERO_DOC, TIPO_DOC,
+                                    FECHA_DOC, ARCHIVO, ESTADO, USUARIO
+                                ) VALUES (
+                                    :anio_pro, :numero_pro, :numero_doc, :tipo_doc,
+                                    TO_DATE(:fecha_doc, 'YYYY-MM-DD'), :archivo, 'A', :usuario
+                                )";
+                    
+                    $stmt_doc = oci_parse($conn, $sql_doc);
+                    
+                    oci_bind_by_name($stmt_doc, ':anio_pro', $datos['anio_pro']);
+                    oci_bind_by_name($stmt_doc, ':numero_pro', $datos['numero_pro']);
+                    oci_bind_by_name($stmt_doc, ':numero_doc', $numero_acta);
+                    oci_bind_by_name($stmt_doc, ':tipo_doc', $datos['tipo_acta']);
+                    oci_bind_by_name($stmt_doc, ':fecha_doc', $datos['fecha_acta']);
+                    oci_bind_by_name($stmt_doc, ':archivo', $nombre_archivo);
+                    oci_bind_by_name($stmt_doc, ':usuario', $datos['usuario']);
+                    
+                    $r_doc = oci_execute($stmt_doc, OCI_NO_AUTO_COMMIT);
+                    if (!$r_doc) {
+                        $e = oci_error($stmt_doc);
+                        error_log("Error al insertar en DOCUMENTO_PROYECTO: " . $e['message']);
+                        oci_rollback($conn);
+                        @unlink($ruta_local);
+                        return ['error' => "Error al insertar en DOCUMENTO_PROYECTO: " . $e['message']];
+                    }
+                    
+                    oci_free_statement($stmt_doc);
+                } else {
+                    oci_rollback($conn);
+                    return ['error' => "Error al mover el archivo. La extensión SSH2 no está disponible y el guardado local falló."];
+                }
             }
+        } else {
+            error_log("No se proporcionó un archivo o el archivo no existe");
+            oci_rollback($conn);
+            return ['error' => "No se proporcionó un archivo o el archivo no existe"];
         }
         
-        // Confirmar transacción
+        // Confirmar la transacción
         oci_commit($conn);
         
         // Liberar recursos
-        oci_free_statement($stid);
+        oci_free_statement($stmt);
         oci_close($conn);
         
-        return true;
+        return $numero_acta;
         
     } catch (Exception $e) {
         error_log("Error en crearActaProyecto: " . $e->getMessage());
-        return ['error' => "Error general: " . $e->getMessage()];
+        return ['error' => "Error general al crear acta: " . $e->getMessage()];
     }
 }
 
 
 
-/**
- * Actualiza un acta existente y su documento asociado si se proporciona uno nuevo
- * @param array $datos Datos del acta a actualizar
- * @param string $archivo_tmp Ruta temporal del archivo subido (opcional)
- * @return bool|array True si fue exitoso, o array con error si falló
- */
-function actualizarActaProyecto($datos, $archivo_tmp = null) {
-    try {
-        // Validar datos obligatorios
-        if (empty($datos['anio_pro']) || empty($datos['numero_pro']) || 
-            empty($datos['numero_acta']) || empty($datos['tipo_acta']) || 
-            empty($datos['fecha_acta'])) {
-            return ['error' => 'Faltan datos obligatorios para actualizar el acta'];
-        }
-        
-        // Formatear fecha si es necesario
-        if (!is_string($datos['fecha_acta'])) {
-            $fecha_acta = date('d/m/Y', strtotime($datos['fecha_acta']));
-        } else {
-            $fecha_acta = $datos['fecha_acta'];
-        }
-        
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Iniciar transacción
-        oci_set_action($conn, 'actualizarActaProyecto');
-        
-        // 1. Actualizar en la tabla ACTA_PROYECTO
-        $sql = "UPDATE ACTA_PROYECTO SET 
-                    TIPO_ACTA = :tipo_acta, 
-                    FECHA_ACTA = TO_DATE(:fecha_acta, 'DD/MM/YYYY'), 
-                    OBSERVA = :observa, 
-                    USUARIO = :usuario
-                WHERE 
-                    ANIO_PRO = :anio_pro 
-                    AND NUMERO_PRO = :numero_pro 
-                    AND NUMERO_ACTA = :numero_acta";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        
-        // Vincular parámetros
-        oci_bind_by_name($stid, ':tipo_acta', $datos['tipo_acta']);
-        oci_bind_by_name($stid, ':fecha_acta', $fecha_acta);
-        oci_bind_by_name($stid, ':observa', $datos['observa']);
-        oci_bind_by_name($stid, ':usuario', $datos['usuario']);
-        oci_bind_by_name($stid, ':anio_pro', $datos['anio_pro']);
-        oci_bind_by_name($stid, ':numero_pro', $datos['numero_pro']);
-        oci_bind_by_name($stid, ':numero_acta', $datos['numero_acta']);
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid, OCI_NO_AUTO_COMMIT);
-        if (!$r) {
-            $e = oci_error($stid);
-            oci_rollback($conn);
-            return ['error' => "Error al actualizar en ACTA_PROYECTO: " . $e['message']];
-        }
-        
-        // Si se proporcionó un archivo, actualizar o crear documento
-        if ($archivo_tmp && file_exists($archivo_tmp)) {
-            // Primero buscar si ya existe un documento asociado a esta acta
-            $sql_check = "SELECT NUMERO_DOC, ARCHIVO FROM DOCUMENTO_PROYECTO 
-                          WHERE ANIO_PRO = :anio_pro 
-                          AND NUMERO_PRO = :numero_pro 
-                          AND TIPO_DOC = :tipo_acta";
-            
-            $stid_check = oci_parse($conn, $sql_check);
-            oci_bind_by_name($stid_check, ':anio_pro', $datos['anio_pro']);
-            oci_bind_by_name($stid_check, ':numero_pro', $datos['numero_pro']);
-            oci_bind_by_name($stid_check, ':tipo_acta', $datos['tipo_acta']);
-            oci_execute($stid_check);
-            
-            $row = oci_fetch_assoc($stid_check);
-            $numero_doc = $row ? $row['NUMERO_DOC'] : obtenerSiguienteNumeroDocumento($datos['anio_pro'], $datos['numero_pro']);
-            $archivo_anterior = $row ? $row['ARCHIVO'] : null;
-            
-            oci_free_statement($stid_check);
-            
-            // Obtener descripción del tipo de acta para el nombre del archivo
-            $tipo_acta_info = obtenerTipoActaPorCodigo($datos['tipo_acta']);
-            $tipo_acta_desc = $tipo_acta_info ? strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $tipo_acta_info['descripcion'])) : 'acta';
-            
-            // Generar nombre de archivo: ANIO_NUMERO_TIPOACTA_SECUENCIAL.ext
-            $extension = pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION);
-            $nombre_archivo = $datos['anio_pro'] . '_' . $datos['numero_pro'] . '_' . $tipo_acta_desc . '_' . $numero_doc . '.' . $extension;
-            
-            // Ruta para guardar el archivo
-            $directorio_destino = 'uploads/actas/';
-            if (!is_dir($directorio_destino)) {
-                mkdir($directorio_destino, 0755, true);
-            }
-            
-            $ruta_destino = $directorio_destino . $nombre_archivo;
-            
-            // Mover el archivo a la ubicación final
-            if (move_uploaded_file($archivo_tmp, $ruta_destino)) {
-                // Eliminar archivo anterior si existe
-                if ($archivo_anterior && file_exists($directorio_destino . $archivo_anterior)) {
-                    @unlink($directorio_destino . $archivo_anterior);
-                }
-                
-                if ($row) {
-                    // Actualizar documento existente
-                    $sql_doc = "UPDATE DOCUMENTO_PROYECTO SET 
-                                    FECHA_DOC = TO_DATE(:fecha_doc, 'DD/MM/YYYY'), 
-                                    ARCHIVO = :archivo, 
-                                    USUARIO = :usuario
-                                WHERE 
-                                    ANIO_PRO = :anio_pro 
-                                    AND NUMERO_PRO = :numero_pro 
-                                    AND NUMERO_DOC = :numero_doc";
-                } else {
-                    // Insertar nuevo documento
-                    $sql_doc = "INSERT INTO DOCUMENTO_PROYECTO (
-                                    ANIO_PRO, NUMERO_PRO, NUMERO_DOC, TIPO_DOC, 
-                                    FECHA_DOC, ARCHIVO, ESTADO, USUARIO
-                                ) VALUES (
-                                    :anio_pro, :numero_pro, :numero_doc, :tipo_doc, 
-                                    TO_DATE(:fecha_doc, 'DD/MM/YYYY'), 
-                                    :archivo, 'A', :usuario
-                                )";
-                }
-                
-                // Preparar consulta
-                $stid_doc = oci_parse($conn, $sql_doc);
-                
-                // Vincular parámetros
-                oci_bind_by_name($stid_doc, ':anio_pro', $datos['anio_pro']);
-                oci_bind_by_name($stid_doc, ':numero_pro', $datos['numero_pro']);
-                oci_bind_by_name($stid_doc, ':numero_doc', $numero_doc);
-                if (!$row) {
-                    oci_bind_by_name($stid_doc, ':tipo_doc', $datos['tipo_acta']);
-                }
-                oci_bind_by_name($stid_doc, ':fecha_doc', $fecha_acta);
-                oci_bind_by_name($stid_doc, ':archivo', $nombre_archivo);
-                oci_bind_by_name($stid_doc, ':usuario', $datos['usuario']);
-                
-                // Ejecutar consulta
-                $r_doc = oci_execute($stid_doc, OCI_NO_AUTO_COMMIT);
-                if (!$r_doc) {
-                    $e = oci_error($stid_doc);
-                    oci_rollback($conn);
-                    @unlink($ruta_destino); // Eliminar el archivo si falla la inserción/actualización
-                    return ['error' => "Error al actualizar/insertar en DOCUMENTO_PROYECTO: " . $e['message']];
-                }
-                
-                oci_free_statement($stid_doc);
-            } else {
-                // Si falla al mover el archivo
-                oci_rollback($conn);
-                return ['error' => "Error al mover el archivo subido"];
-            }
-        }
-        
-        // Confirmar transacción
-        oci_commit($conn);
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return true;
-        
-    } catch (Exception $e) {
-        error_log("Error en actualizarActaProyecto: " . $e->getMessage());
-        return ['error' => "Error general: " . $e->getMessage()];
-    }
-}
 
-/**
- * Elimina un acta y su documento asociado
- * @param int $anio_pro Año del proyecto
- * @param int $numero_pro Número del proyecto
- * @param int $numero_acta Número del acta
- * @return bool|array True si fue exitoso, o array con error si falló
- */
-function eliminarActaProyecto($anio_pro, $numero_pro, $numero_acta) {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Iniciar transacción
-        oci_set_action($conn, 'eliminarActaProyecto');
-        
-        // Primero obtenemos el tipo de acta para buscar documentos asociados
-        $sql_get_tipo = "SELECT TIPO_ACTA FROM ACTA_PROYECTO 
-                         WHERE ANIO_PRO = :anio_pro 
-                         AND NUMERO_PRO = :numero_pro 
-                         AND NUMERO_ACTA = :numero_acta";
-        
-        $stid_get = oci_parse($conn, $sql_get_tipo);
-        oci_bind_by_name($stid_get, ':anio_pro', $anio_pro);
-        oci_bind_by_name($stid_get, ':numero_pro', $numero_pro);
-        oci_bind_by_name($stid_get, ':numero_acta', $numero_acta);
-        oci_execute($stid_get);
-        
-        $row = oci_fetch_assoc($stid_get);
-        $tipo_acta = $row ? $row['TIPO_ACTA'] : null;
-        
-        oci_free_statement($stid_get);
-        
-        // Si encontramos el tipo de acta, buscamos documentos asociados
-        if ($tipo_acta) {
-            // Obtener documentos asociados
-            $sql_docs = "SELECT NUMERO_DOC, ARCHIVO FROM DOCUMENTO_PROYECTO 
-                         WHERE ANIO_PRO = :anio_pro 
-                         AND NUMERO_PRO = :numero_pro 
-                         AND TIPO_DOC = :tipo_acta";
-            
-            $stid_docs = oci_parse($conn, $sql_docs);
-            oci_bind_by_name($stid_docs, ':anio_pro', $anio_pro);
-            oci_bind_by_name($stid_docs, ':numero_pro', $numero_pro);
-            oci_bind_by_name($stid_docs, ':tipo_acta', $tipo_acta);
-            oci_execute($stid_docs);
-            
-            $archivos_a_eliminar = [];
-            $documentos_a_eliminar = [];
-            
-            while ($doc_row = oci_fetch_assoc($stid_docs)) {
-                $documentos_a_eliminar[] = $doc_row['NUMERO_DOC'];
-                if (!empty($doc_row['ARCHIVO'])) {
-                    $archivos_a_eliminar[] = $doc_row['ARCHIVO'];
-                }
-            }
-            
-            oci_free_statement($stid_docs);
-            
-            // Eliminar documentos de la base de datos
-            if (!empty($documentos_a_eliminar)) {
-                foreach ($documentos_a_eliminar as $num_doc) {
-                    $sql_del_doc = "DELETE FROM DOCUMENTO_PROYECTO 
-                                  WHERE ANIO_PRO = :anio_pro 
-                                  AND NUMERO_PRO = :numero_pro 
-                                  AND NUMERO_DOC = :numero_doc";
-                    
-                    $stid_del_doc = oci_parse($conn, $sql_del_doc);
-                    oci_bind_by_name($stid_del_doc, ':anio_pro', $anio_pro);
-                    oci_bind_by_name($stid_del_doc, ':numero_pro', $numero_pro);
-                    oci_bind_by_name($stid_del_doc, ':numero_doc', $num_doc);
-                    
-                    $r_del_doc = oci_execute($stid_del_doc, OCI_NO_AUTO_COMMIT);
-                    if (!$r_del_doc) {
-                        $e = oci_error($stid_del_doc);
-                        oci_rollback($conn);
-                        return ['error' => "Error al eliminar documento: " . $e['message']];
-                    }
-                    
-                    oci_free_statement($stid_del_doc);
-                }
-            }
-        }
-        
-        // Eliminar el acta de la base de datos
-        $sql = "DELETE FROM ACTA_PROYECTO 
-                WHERE ANIO_PRO = :anio_pro 
-                AND NUMERO_PRO = :numero_pro 
-                AND NUMERO_ACTA = :numero_acta";
-        
-        $stid = oci_parse($conn, $sql);
-        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
-        oci_bind_by_name($stid, ':numero_pro', $numero_pro);
-        oci_bind_by_name($stid, ':numero_acta', $numero_acta);
-        
-        $r = oci_execute($stid, OCI_NO_AUTO_COMMIT);
-        if (!$r) {
-            $e = oci_error($stid);
-            oci_rollback($conn);
-            return ['error' => "Error al eliminar acta: " . $e['message']];
-        }
-        
-        // Confirmar transacción
-        oci_commit($conn);
-        
-        // Eliminar archivos físicos
-        if (!empty($archivos_a_eliminar)) {
-            $directorio_destino = 'uploads/actas/';
-            foreach ($archivos_a_eliminar as $archivo) {
-                $ruta_archivo = $directorio_destino . $archivo;
-                if (file_exists($ruta_archivo)) {
-                    @unlink($ruta_archivo);
-                }
-            }
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return true;
-        
-    } catch (Exception $e) {
-        error_log("Error en eliminarActaProyecto: " . $e->getMessage());
-        return ['error' => "Error general: " . $e->getMessage()];
-    }
-}
 ?>
