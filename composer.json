@@ -1,0 +1,21 @@
+{
+    "name": "web-master/e_a",
+    "require-dev": {
+        "composer": "^2.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "WebMaster\\EA\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "andres"
+        }
+    ],
+    "require": {
+        "smalot/pdfparser": "^2.11",
+        "vanderlee/php-sentence": "^1.0",
+        "snacy/snacy_php_package": "*"
+    }
+}
