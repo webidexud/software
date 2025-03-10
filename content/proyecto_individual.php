@@ -745,141 +745,184 @@ if (!empty($proyecto['codigo_bancario'])) {
                 </div>
             </div>
         </div>
-        
         <!-- Pestaña de Detalles Adicionales -->
-        <div class="tab-pane fade" id="details" role="tabpanel" aria-labelledby="details-tab">
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="detail-section">
-                        <label class="info-label">Acto Administrativo</label>
-                        <p class="info-value"><?php echo htmlspecialchars($proyecto['acto_administrativo'] ?: '-'); ?></p>
-                    </div>
-                    
-                    <div class="detail-section">
-                        <label class="info-label">Enlace SECOP</label>
-                        <?php if(!empty($proyecto['enlace_secop'])): ?>
-                        <p class="info-value">
-                            <a href="<?php echo htmlspecialchars($proyecto['enlace_secop']); ?>" target="_blank" class="text-primary-light">
-                                <i class="fas fa-external-link-alt link-icon"></i><?php echo htmlspecialchars($proyecto['enlace_secop']); ?>
-                            </a>
-                        </p>
-                        <?php else: ?>
-                        <p class="info-value">-</p>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="detail-section">
-                        <label class="info-label">Datos Adicionales</label>
-                        <?php if(!empty($proyecto['datos_adicionales'])): ?>
-                        <p class="info-value"><?php echo nl2br(htmlspecialchars($proyecto['datos_adicionales'])); ?></p>
-                        <?php else: ?>
-                        <p class="info-value">-</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                
-                <div class="col-md-6">
-                    <div class="detail-section">
-                        <label class="info-label">Usuario Creador</label>
-                        <p class="info-value"><?php echo htmlspecialchars($proyecto['usuario'] ?: '-'); ?></p>
-                    </div>
-                    
-                    <div class="detail-section">
-                        <label class="info-label">Fecha de Registro</label>
-                        <?php 
-                        $fechaRegistro = '';
-                        if (!empty($proyecto['anio']) && !empty($proyecto['mes']) && !empty($proyecto['dia'])) {
-                            $fechaRegistro = sprintf('%04d-%02d-%02d', $proyecto['anio'], $proyecto['mes'], $proyecto['dia']);
-                            if (!empty($proyecto['hora'])) {
-                                $fechaRegistro .= sprintf(' %02d:00:00', $proyecto['hora']);
-                            }
-                        }
-                        ?>
-                        <p class="info-value"><?php echo $fechaRegistro ? formatearFecha($fechaRegistro) : '-'; ?></p>
-                    </div>
-                </div>
+<div class="tab-pane fade" id="details" role="tabpanel" aria-labelledby="details-tab">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="detail-section">
+                <label class="info-label">Acto Administrativo</label>
+                <p class="info-value"><?php echo htmlspecialchars($proyecto['acto_administrativo'] ?: '-'); ?></p>
+            </div>
+            
+            <div class="detail-section">
+                <label class="info-label">Enlace SECOP</label>
+                <?php if(!empty($proyecto['enlace_secop'])): ?>
+                <p class="info-value">
+                    <a href="<?php echo htmlspecialchars($proyecto['enlace_secop']); ?>" target="_blank" class="text-primary-light">
+                        <i class="fas fa-external-link-alt link-icon"></i><?php echo htmlspecialchars($proyecto['enlace_secop']); ?>
+                    </a>
+                </p>
+                <?php else: ?>
+                <p class="info-value">-</p>
+                <?php endif; ?>
+            </div>
+            
+            <div class="detail-section">
+                <label class="info-label">Datos Adicionales</label>
+                <?php if(!empty($proyecto['datos_adicionales'])): ?>
+                <p class="info-value"><?php echo nl2br(htmlspecialchars($proyecto['datos_adicionales'])); ?></p>
+                <?php else: ?>
+                <p class="info-value">-</p>
+                <?php endif; ?>
             </div>
         </div>
         
-        <!-- Pestaña de Actas -->
-        <div class="tab-pane fade" id="actas" role="tabpanel" aria-labelledby="actas-tab">
-            <?php
-            // Obtener las actas del proyecto
-            $actas = obtenerActasProyecto($proyecto_id);
-            
-            // Ordenar las actas por número (de menor a mayor)
-            usort($actas, function($a, $b) {
-                return $a['numero_acta'] - $b['numero_acta'];
-            });
-            
-            // URL base para los documentos
-            $baseUrlDocumentos = "http://siexud.udistrital.edu.co/idexud/siexud/actasproy/upload/";
-            ?>
-            
-            <?php if(empty($actas)): ?>
-            <div class="text-center py-5">
-                <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
-                <p class="text-muted">No se encontraron actas registradas para este proyecto.</p>
-                <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>" class="btn btn-sm btn-primary mt-2 no-print">
-                    <i class="fas fa-plus me-1"></i> Agregar Acta
-                </a>
-            </div>
-            <?php else: ?>
-            <div class="table-responsive">
-                <table class="table table-hover table-striped">
-                    <thead>
-                        <tr>
-                            <th>N°</th>
-                            <th>Tipo</th>
-                            <th>Fecha</th>
-                            <th>Observaciones</th>
-                            <th class="text-center no-print">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach($actas as $acta): 
-                            // Obtener el documento asociado al acta
-                            $documentoActa = obtenerDocumentoActa($proyecto_id, $acta['numero_acta'], $acta['tipo_acta']);
-                            $tieneDocumento = !empty($documentoActa) && !empty($documentoActa['archivo']);
-                            $urlDocumento = $tieneDocumento ? $baseUrlDocumentos . $documentoActa['archivo'] : '';
-                        ?>
-                        <tr>
-                            <td><?php echo $acta['numero_acta']; ?></td>
-                            <td><?php echo htmlspecialchars($acta['tipo_descripcion'] ?: 'Tipo '.$acta['tipo_acta']); ?></td>
-                            <td><?php echo formatearFecha($acta['fecha_acta']); ?></td>
-                            <td><?php echo htmlspecialchars(substr($acta['observa'], 0, 80) . (strlen($acta['observa']) > 80 ? '...' : '')); ?></td>
-                            <td class="text-center no-print">
-                                <?php if($tieneDocumento): ?>
-                                <button type="button" class="btn btn-sm btn-info action-button" 
-                                    data-bs-toggle="modal" data-bs-target="#documentoModal" 
-                                    data-doc-url="<?php echo htmlspecialchars($urlDocumento); ?>"
-                                    data-doc-title="Acta #<?php echo $acta['numero_acta']; ?> - <?php echo htmlspecialchars($acta['tipo_descripcion'] ?: 'Tipo '.$acta['tipo_acta']); ?>"
-                                    title="Ver Acta">
-                                    <i class="fas fa-eye me-1"></i> Ver
-                                </button>
-                                <a href="<?php echo htmlspecialchars($urlDocumento); ?>" class="btn btn-sm btn-primary action-button" title="Descargar Acta" target="_blank">
-                                    <i class="fas fa-download me-1"></i> Descargar
-                                </a>
-                                <?php else: ?>
-                                <button disabled class="btn btn-sm btn-secondary action-button" title="Documento no disponible">
-                                    <i class="fas fa-file-alt me-1"></i> No disponible
-                                </button>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+        <div class="col-md-6">
+            <div class="detail-section">
+                <label class="info-label">Usuario Creador</label>
+                <p class="info-value"><?php echo htmlspecialchars($proyecto['usuario'] ?: '-'); ?></p>
             </div>
             
-            <div class="p-3 text-end no-print">
-                <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>" class="btn btn-sm btn-primary">
-                    <i class="fas fa-plus me-1"></i> Agregar Acta
-                </a>
+            <div class="detail-section">
+                <label class="info-label">Fecha de Registro</label>
+                <?php 
+                $fechaRegistro = '';
+                if (!empty($proyecto['anio']) && !empty($proyecto['mes']) && !empty($proyecto['dia'])) {
+                    $fechaRegistro = sprintf('%04d-%02d-%02d', $proyecto['anio'], $proyecto['mes'], $proyecto['dia']);
+                    if (!empty($proyecto['hora'])) {
+                        $fechaRegistro .= sprintf(' %02d:00:00', $proyecto['hora']);
+                    }
+                }
+                ?>
+                <p class="info-value"><?php echo $fechaRegistro ? formatearFecha($fechaRegistro) : '-'; ?></p>
             </div>
-            <?php endif; ?>
         </div>
     </div>
+</div>
+
+<!-- Pestaña de Actas -->
+<div class="tab-pane fade" id="actas" role="tabpanel" aria-labelledby="actas-tab">
+    <?php
+    // Obtener las actas del proyecto
+    $actas = obtenerActasProyecto($proyecto_id);
+    
+    // Ordenar las actas por número (de menor a mayor)
+    usort($actas, function($a, $b) {
+        return $a['numero_acta'] - $b['numero_acta'];
+    });
+    
+    // URL base para los documentos
+    $baseUrlDocumentos = "http://siexud.udistrital.edu.co/idexud/siexud/actasproy/upload/";
+    
+    // Procesar eliminación de acta si se ha enviado el formulario
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_acta'])) {
+        $anio_pro = isset($_POST['anio_pro']) ? intval($_POST['anio_pro']) : 0;
+        $numero_pro = isset($_POST['numero_pro']) ? intval($_POST['numero_pro']) : 0;
+        $numero_acta = isset($_POST['numero_acta']) ? intval($_POST['numero_acta']) : 0;
+        
+        if ($anio_pro > 0 && $numero_pro > 0 && $numero_acta > 0) {
+            $resultado = eliminarActaProyecto($anio_pro, $numero_pro, $numero_acta);
+            
+            if (is_array($resultado) && isset($resultado['error'])) {
+                echo '<div class="alert alert-danger" role="alert">';
+                echo '<i class="fas fa-exclamation-triangle me-2"></i> Error al eliminar el acta: ' . $resultado['error'];
+                echo '</div>';
+            } else {
+                echo '<div class="alert alert-success" role="alert">';
+                echo '<i class="fas fa-check-circle me-2"></i> Acta eliminada correctamente.';
+                echo '</div>';
+                
+                // Recargar las actas
+                $actas = obtenerActasProyecto($proyecto_id);
+                usort($actas, function($a, $b) {
+                    return $a['numero_acta'] - $b['numero_acta'];
+                });
+                
+                // Redirigir para actualizar la página después de un breve retraso
+                echo '<meta http-equiv="refresh" content="2;url=main.php?page=proyecto_individual&id=' . $proyecto_id . '#actas">';
+            }
+        }
+    }
+    ?>
+    
+    <?php if(empty($actas)): ?>
+    <div class="text-center py-5">
+        <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+        <p class="text-muted">No se encontraron actas registradas para este proyecto.</p>
+        <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>" class="btn btn-sm btn-primary mt-2 no-print">
+            <i class="fas fa-plus me-1"></i> Agregar Acta
+        </a>
+    </div>
+    <?php else: ?>
+    <div class="table-responsive">
+        <table class="table table-hover table-striped">
+            <thead>
+                <tr>
+                    <th>N°</th>
+                    <th>Tipo</th>
+                    <th>Fecha</th>
+                    <th>Observaciones</th>
+                    <th class="text-center no-print">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($actas as $acta): 
+                    // Obtener el documento asociado al acta
+                    $documentoActa = obtenerDocumentoActa($proyecto_id, $acta['numero_acta'], $acta['tipo_acta']);
+                    $tieneDocumento = !empty($documentoActa) && !empty($documentoActa['archivo']);
+                    $urlDocumento = $tieneDocumento ? $baseUrlDocumentos . $documentoActa['archivo'] : '';
+                ?>
+                <tr>
+                    <td><?php echo $acta['numero_acta']; ?></td>
+                    <td><?php echo htmlspecialchars($acta['tipo_descripcion'] ?: 'Tipo '.$acta['tipo_acta']); ?></td>
+                    <td><?php echo formatearFecha($acta['fecha_acta']); ?></td>
+                    <td><?php echo htmlspecialchars(substr($acta['observa'], 0, 80) . (strlen($acta['observa']) > 80 ? '...' : '')); ?></td>
+                    <td class="text-center no-print">
+                        <?php if($tieneDocumento): ?>
+                        <button type="button" class="btn btn-sm btn-info action-button" 
+                            data-bs-toggle="modal" data-bs-target="#documentoModal" 
+                            data-doc-url="<?php echo htmlspecialchars($urlDocumento); ?>"
+                            data-doc-title="Acta #<?php echo $acta['numero_acta']; ?> - <?php echo htmlspecialchars($acta['tipo_descripcion'] ?: 'Tipo '.$acta['tipo_acta']); ?>"
+                            title="Ver Acta">
+                            <i class="fas fa-eye me-1"></i> Ver
+                        </button>
+                        <a href="<?php echo htmlspecialchars($urlDocumento); ?>" class="btn btn-sm btn-primary action-button" title="Descargar Acta" target="_blank">
+                            <i class="fas fa-download me-1"></i> Descargar
+                        </a>
+                        <?php else: ?>
+                        <button disabled class="btn btn-sm btn-secondary action-button" title="Documento no disponible">
+                            <i class="fas fa-file-alt me-1"></i> No disponible
+                        </button>
+                        <?php endif; ?>
+                        
+                        <!-- Botones de editar y eliminar -->
+                        <a href="main.php?page=editar_acta&proyecto_id=<?php echo $proyecto_id; ?>&numero_acta=<?php echo $acta['numero_acta']; ?>&tipo_acta=<?php echo $acta['tipo_acta']; ?>" 
+                           class="btn btn-sm btn-warning action-button" title="Editar Acta">
+                            <i class="fas fa-edit me-1"></i> Editar
+                        </a>
+                        
+                        <button type="button" class="btn btn-sm btn-danger action-button" 
+                                data-bs-toggle="modal" data-bs-target="#eliminarActaModal"
+                                data-anio-pro="<?php echo $acta['anio_pro']; ?>"
+                                data-numero-pro="<?php echo $acta['numero_pro']; ?>"
+                                data-numero-acta="<?php echo $acta['numero_acta']; ?>"
+                                data-tipo-acta="<?php echo htmlspecialchars($acta['tipo_descripcion'] ?: 'Tipo '.$acta['tipo_acta']); ?>"
+                                title="Eliminar Acta">
+                            <i class="fas fa-trash me-1"></i> Eliminar
+                        </button>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="p-3 text-end no-print">
+        <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>" class="btn btn-sm btn-primary">
+            <i class="fas fa-plus me-1"></i> Agregar Acta
+        </a>
+    </div>
+    <?php endif; ?>
 </div>
 
 <!-- Modal para visualizar documentos -->
@@ -900,6 +943,33 @@ if (!empty($proyecto['codigo_bancario'])) {
                     <i class="fas fa-download me-1"></i> Descargar
                 </a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para confirmar eliminación de acta -->
+<div class="modal fade" id="eliminarActaModal" tabindex="-1" aria-labelledby="eliminarActaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="eliminarActaModalLabel">Confirmar Eliminación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Está seguro de que desea eliminar esta acta?</p>
+                <p>Acta #<span id="modal-numero-acta"></span> - <span id="modal-tipo-acta"></span></p>
+                <p class="text-danger mb-0"><i class="fas fa-exclamation-triangle me-2"></i> Esta acción no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="POST" action="#actas">
+                    <input type="hidden" name="anio_pro" id="form-anio-pro">
+                    <input type="hidden" name="numero_pro" id="form-numero-pro">
+                    <input type="hidden" name="numero_acta" id="form-numero-acta">
+                    <input type="hidden" name="eliminar_acta" value="1">
+                    <button type="submit" class="btn btn-danger">Eliminar</button>
+                </form>
             </div>
         </div>
     </div>
@@ -977,6 +1047,30 @@ document.addEventListener('DOMContentLoaded', function() {
         documentoModal.addEventListener('hidden.bs.modal', function () {
             const iframe = documentoModal.querySelector('#documentoIframe');
             iframe.src = '';
+        });
+    }
+    
+    // Configurar el modal de eliminación de acta
+    const eliminarActaModal = document.getElementById('eliminarActaModal');
+    if (eliminarActaModal) {
+        eliminarActaModal.addEventListener('show.bs.modal', function(event) {
+            // Botón que activó el modal
+            const button = event.relatedTarget;
+            
+            // Extraer información
+            const anio_pro = button.getAttribute('data-anio-pro');
+            const numero_pro = button.getAttribute('data-numero-pro');
+            const numero_acta = button.getAttribute('data-numero-acta');
+            const tipo_acta = button.getAttribute('data-tipo-acta');
+            
+            // Actualizar el modal
+            document.getElementById('modal-numero-acta').textContent = numero_acta;
+            document.getElementById('modal-tipo-acta').textContent = tipo_acta;
+            
+            // Actualizar los campos del formulario
+            document.getElementById('form-anio-pro').value = anio_pro;
+            document.getElementById('form-numero-pro').value = numero_pro;
+            document.getElementById('form-numero-acta').value = numero_acta;
         });
     }
 
