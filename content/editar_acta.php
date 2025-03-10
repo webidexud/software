@@ -1,16 +1,17 @@
 <?php
 /**
- * Página para agregar una nueva acta a un proyecto
+ * Página para editar un acta existente de un proyecto
  */
 
-// Verificar que se haya proporcionado un ID de proyecto
-if (!isset($_GET['proyecto_id']) || !is_numeric($_GET['proyecto_id'])) {
-    // Redirigir a la lista de proyectos si no se proporciona un ID válido
+// Verificar que se hayan proporcionado los parámetros necesarios
+if (!isset($_GET['proyecto_id']) || !is_numeric($_GET['proyecto_id']) || !isset($_GET['acta_id']) || !is_numeric($_GET['acta_id'])) {
+    // Redirigir a la lista de proyectos si no se proporcionan IDs válidos
     header('Location: main.php?page=proyecto');
     exit;
 }
 
 $proyecto_id = intval($_GET['proyecto_id']);
+$acta_id = intval($_GET['acta_id']);
 
 // Incluir los modelos necesarios
 if (file_exists('models/proyecto_model.php')) {
@@ -20,6 +21,11 @@ if (file_exists('models/proyecto_model.php')) {
     exit;
 }
 
+// Verificar que las funciones necesarias existen
+if (!function_exists('obtenerProyectoDetalle') || !function_exists('obtenerDetalleActa') || !function_exists('actualizarActaProyecto')) {
+    echo '<div class="alert alert-danger">Error: Algunas funciones necesarias no están disponibles.</div>';
+    exit;
+}
 
 // Obtener información del proyecto
 $proyecto = obtenerProyectoDetalle($proyecto_id);
@@ -27,6 +33,15 @@ $proyecto = obtenerProyectoDetalle($proyecto_id);
 // Si no se encuentra el proyecto, mostrar mensaje de error
 if (!$proyecto) {
     echo '<div class="alert alert-danger" role="alert">El proyecto solicitado no existe o no se puede acceder a él en este momento.</div>';
+    exit;
+}
+
+// Obtener el detalle del acta a editar
+$acta = obtenerDetalleActa($proyecto['anio_pro'], $proyecto_id, $acta_id);
+
+// Si no se encuentra el acta, mostrar mensaje de error
+if (!$acta) {
+    echo '<div class="alert alert-danger" role="alert">El acta solicitada no existe o no se puede acceder a ella en este momento.</div>';
     exit;
 }
 
@@ -38,7 +53,7 @@ $mensaje = '';
 $error = '';
 
 // Procesar el formulario si se envió
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['agregar_acta'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['editar_acta'])) {
     // Recoger datos del formulario
     $tipo_acta = isset($_POST['tipo_acta']) ? trim($_POST['tipo_acta']) : '';
     $fecha_acta = isset($_POST['fecha_acta']) ? trim($_POST['fecha_acta']) : '';
@@ -49,34 +64,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['agregar_acta'])) {
         $error = 'El tipo de acta es obligatorio';
     } else if (empty($fecha_acta)) {
         $error = 'La fecha del acta es obligatoria';
-    } else if (!isset($_FILES['archivo']) || $_FILES['archivo']['error'] != 0) {
-        $error = 'Debe seleccionar un archivo para el acta';
     } else {
-        // Validar tipo de archivo
-        $archivo_tmp = $_FILES['archivo']['tmp_name'];
-        $extension = strtolower(pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION));
+        // Preparar datos del acta
+        $datos_acta = [
+            'anio_pro' => $proyecto['anio_pro'],
+            'numero_pro' => $proyecto['numero_pro'],
+            'numero_acta' => $acta_id,
+            'tipo_acta' => $tipo_acta,
+            'fecha_acta' => $fecha_acta,
+            'observa' => $observaciones,
+            'usuario' => $_SESSION['username'] ?? 'ADMIN' // Usuario actual o predeterminado
+        ];
         
-        // Solo aceptar archivos PDF
-        if ($extension != 'pdf') {
-            $error = 'Solo se permiten archivos PDF';
-        } else {
-            // Preparar datos del acta
-            $datos_acta = [
-                'anio_pro' => $proyecto['anio_pro'],
-                'numero_pro' => $proyecto['numero_pro'],
-                'tipo_acta' => $tipo_acta,
-                'fecha_acta' => $fecha_acta,
-                'observa' => $observaciones,
-                'usuario' => $_SESSION['username'] ?? 'ADMIN' // Usuario actual o predeterminado
-            ];
+        // Verificar si se subió un nuevo archivo
+        $archivo_tmp = null;
+        if (isset($_FILES['archivo']) && $_FILES['archivo']['error'] == 0) {
+            // Validar tipo de archivo
+            $extension = strtolower(pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION));
             
-            // Intentar crear el acta
-            $resultado = crearActaProyecto($datos_acta, $archivo_tmp);
+            // Solo aceptar archivos PDF
+            if ($extension != 'pdf') {
+                $error = 'Solo se permiten archivos PDF';
+            } else {
+                $archivo_tmp = $_FILES['archivo']['tmp_name'];
+            }
+        }
+        
+        if (empty($error)) {
+            // Intentar actualizar el acta
+            $resultado = actualizarActaProyecto($datos_acta, $archivo_tmp);
             
             if (is_array($resultado) && isset($resultado['error'])) {
                 $error = $resultado['error'];
             } else {
-                $mensaje = 'Acta agregada correctamente';
+                $mensaje = 'Acta actualizada correctamente';
+                
+                // Recargar los datos del acta para mostrar la información actualizada
+                $acta = obtenerDetalleActa($proyecto['anio_pro'], $proyecto_id, $acta_id);
                 
                 // Redirigir a la página del proyecto después de un breve retraso
                 echo '<meta http-equiv="refresh" content="2;url=main.php?page=proyecto_individual&id=' . $proyecto_id . '#actas">';
@@ -85,15 +109,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['agregar_acta'])) {
     }
 }
 
-// Función para formatear fechas
-function formatearFecha($fecha) {
-    if (!$fecha) return "-";
+// Función para formatear fechas para inputs
+function formatearFechaInput($fecha) {
+    if (!$fecha) return "";
     
     try {
         $date = new DateTime($fecha);
-        return $date->format('d/m/Y');
+        return $date->format('Y-m-d');
     } catch (Exception $e) {
-        return "-";
+        return "";
     }
 }
 ?>
@@ -103,13 +127,13 @@ function formatearFecha($fecha) {
     <div class="row mb-4">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
-                <h4 class="mb-0">Agregar Acta</h4>
+                <h4 class="mb-0">Editar Acta</h4>
                 <a href="main.php?page=proyecto_individual&id=<?php echo $proyecto_id; ?>#actas" class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-arrow-left me-1"></i> Volver al Proyecto
                 </a>
             </div>
             <p class="text-sm text-muted">
-                Agregar una nueva acta al proyecto: <strong><?php echo htmlspecialchars($proyecto['nombre']); ?></strong>
+                Editar acta para el proyecto: <strong><?php echo htmlspecialchars($proyecto['nombre']); ?></strong>
             </p>
         </div>
     </div>
@@ -151,7 +175,7 @@ function formatearFecha($fecha) {
         </div>
     </div>
     
-    <!-- Formulario para agregar acta -->
+    <!-- Formulario para editar acta -->
     <div class="row">
         <div class="col-12">
             <div class="card">
@@ -166,32 +190,40 @@ function formatearFecha($fecha) {
                                 <select class="form-select" id="tipo_acta" name="tipo_acta" required>
                                     <option value="">Seleccione un tipo...</option>
                                     <?php foreach ($tipos_acta as $tipo): ?>
-                                    <option value="<?php echo $tipo['codigo']; ?>" <?php echo isset($_POST['tipo_acta']) && $_POST['tipo_acta'] == $tipo['codigo'] ? 'selected' : ''; ?>>
+                                    <option value="<?php echo $tipo['codigo']; ?>" <?php echo $acta['tipo_acta'] == $tipo['codigo'] ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($tipo['descripcion']); ?>
                                     </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <small class="text-muted">Seleccione el tipo de acta a registrar</small>
+                                <small class="text-muted">Seleccione el tipo de acta</small>
                             </div>
                             
                             <div class="col-md-4 mb-3">
                                 <label for="fecha_acta" class="form-label">Fecha del Acta *</label>
                                 <input type="date" class="form-control" id="fecha_acta" name="fecha_acta" 
-                                       value="<?php echo isset($_POST['fecha_acta']) ? $_POST['fecha_acta'] : date('Y-m-d'); ?>" required>
+                                       value="<?php echo formatearFechaInput($acta['fecha_acta']); ?>" required>
                                 <small class="text-muted">Fecha en que se realizó el acta</small>
                             </div>
                             
                             <div class="col-md-4 mb-3">
-                                <label for="archivo" class="form-label">Documento del Acta (PDF) *</label>
-                                <input type="file" class="form-control" id="archivo" name="archivo" accept=".pdf" required>
-                                <small class="text-muted">Sólo se permiten archivos PDF</small>
+                                <label for="archivo" class="form-label">Documento del Acta (PDF)</label>
+                                <input type="file" class="form-control" id="archivo" name="archivo" accept=".pdf">
+                                <small class="text-muted">Sólo se permiten archivos PDF. Deje vacío para mantener el documento actual.</small>
+                                <?php if (!empty($acta['archivo'])): ?>
+                                <div class="mt-2">
+                                    <strong>Documento actual:</strong> 
+                                    <a href="http://200.69.103.17/idexud/siexud/actasproy/<?php echo htmlspecialchars($acta['archivo']); ?>" target="_blank" class="text-primary">
+                                        <i class="fas fa-file-pdf me-1"></i><?php echo htmlspecialchars($acta['archivo']); ?>
+                                    </a>
+                                </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                         
                         <div class="row">
                             <div class="col-md-12 mb-3">
                                 <label for="observaciones" class="form-label">Observaciones</label>
-                                <textarea class="form-control" id="observaciones" name="observaciones" rows="4"><?php echo isset($_POST['observaciones']) ? htmlspecialchars($_POST['observaciones']) : ''; ?></textarea>
+                                <textarea class="form-control" id="observaciones" name="observaciones" rows="4"><?php echo htmlspecialchars($acta['observa'] ?: ''); ?></textarea>
                                 <small class="text-muted">Información adicional sobre el acta (opcional)</small>
                             </div>
                         </div>
@@ -201,63 +233,12 @@ function formatearFecha($fecha) {
                                 <a href="main.php?page=proyecto_individual&id=<?php echo $proyecto_id; ?>#actas" class="btn btn-secondary me-2">
                                     <i class="fas fa-times me-1"></i> Cancelar
                                 </a>
-                                <button type="submit" name="agregar_acta" class="btn btn-primary">
-                                    <i class="fas fa-save me-1"></i> Guardar Acta
+                                <button type="submit" name="editar_acta" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i> Actualizar Acta
                                 </button>
                             </div>
                         </div>
                     </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Información sobre tipos de actas -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header pb-0">
-                    <h5 class="mb-0">Información sobre Tipos de Actas</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Tipo de Acta</th>
-                                    <th>Descripción</th>
-                                    <th>Uso Recomendado</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>Acta de Inicio</td>
-                                    <td>Documento que formaliza el inicio del proyecto</td>
-                                    <td>Al comenzar el proyecto, después de la firma del contrato</td>
-                                </tr>
-                                <tr>
-                                    <td>Acta de Seguimiento</td>
-                                    <td>Documento que registra el avance y estado del proyecto</td>
-                                    <td>Durante la ejecución del proyecto, según los hitos establecidos</td>
-                                </tr>
-                                <tr>
-                                    <td>Acta de Suspensión</td>
-                                    <td>Documento que formaliza la suspensión temporal del proyecto</td>
-                                    <td>Cuando sea necesario detener temporalmente el proyecto</td>
-                                </tr>
-                                <tr>
-                                    <td>Acta de Prórroga</td>
-                                    <td>Documento que formaliza la extensión del plazo del proyecto</td>
-                                    <td>Cuando se requiera ampliar el tiempo de ejecución</td>
-                                </tr>
-                                <tr>
-                                    <td>Acta de Cierre</td>
-                                    <td>Documento que formaliza la finalización del proyecto</td>
-                                    <td>Al completar todas las actividades y entregables del proyecto</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
                 </div>
             </div>
         </div>
@@ -293,12 +274,8 @@ document.addEventListener('DOMContentLoaded', function() {
             fechaActaInput.classList.add('is-valid');
         }
         
-        // Validar archivo
-        if (!archivoInput.files || archivoInput.files.length === 0) {
-            archivoInput.classList.add('is-invalid');
-            hasError = true;
-        } else {
-            // Validar extensión
+        // Validar archivo solo si se ha seleccionado uno
+        if (archivoInput.files && archivoInput.files.length > 0) {
             const fileName = archivoInput.files[0].name;
             const fileExt = fileName.split('.').pop().toLowerCase();
             

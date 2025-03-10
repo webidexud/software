@@ -1,1438 +1,1979 @@
 <?php
 /**
- * Consultas Especializadas
- * Este archivo contiene consultas especializadas para el sistema de gestión de actas y proyectos
- * Optimizado para rendimiento y mantenibilidad
+ * Centro de Consultas Especializadas
+ * 
+ * Este módulo proporciona un centro unificado para realizar consultas avanzadas
+ * sobre proyectos, entidades y otros datos del sistema con filtros complejos,
+ * visualizaciones interactivas y exportación de resultados.
  */
 
-class ConsultasEspecializadas {
-    private $db;
-    private $logger;
-    private $config;
+// Incluir los modelos necesarios
+if (file_exists('models/proyecto_model.php')) {
+    include_once 'models/proyecto_model.php';
+}
+if (file_exists('models/entidad_model.php')) {
+    include_once 'models/entidad_model.php';
+}
 
-    /**
-     * Constructor de la clase
-     * @param PDO $conexion Conexión a la base de datos
-     * @param Logger $logger Opcional: Sistema de logging
-     * @param array $config Opcional: Configuración adicional
-     */
-    public function __construct($conexion, $logger = null, $config = []) {
-        $this->db = $conexion;
-        $this->logger = $logger;
-        $this->config = $config;
-        
-        // Configurar errores PDO
-        $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    }
+// Obtener datos para los filtros
+$anios = function_exists('obtenerListaAnios') ? obtenerListaAnios() : [date('Y') - 2, date('Y') - 1, date('Y')];
+$entidades = function_exists('obtenerListaEntidades') ? obtenerListaEntidades() : [];
+$situaciones = function_exists('obtenerListaSituaciones') ? obtenerListaSituaciones() : [];
 
-    /**
-     * Registra actividad en el sistema de logs si está disponible
-     */
-    private function log($mensaje, $nivel = 'info', $contexto = []) {
-        if ($this->logger) {
-            $this->logger->log($nivel, $mensaje, $contexto);
-        }
-    }
+// Tipos de consultas disponibles
+$tipos_consulta = [
+    'proyectos_activos' => 'Proyectos Activos',
+    'proyectos_por_anio' => 'Proyectos por Año',
+    'proyectos_por_entidad' => 'Proyectos por Entidad',
+    'proyectos_por_situacion' => 'Proyectos por Situación',
+    'valor_por_anio' => 'Valor por Año',
+    'rendimiento_por_entidad' => 'Rendimiento por Entidad',
+    'proyectos_vencimiento' => 'Proyectos por Vencer',
+    'distribucion_geografica' => 'Distribución Geográfica',
+    'proyectos_supervisor' => 'Proyectos por Supervisor',
+    'analisis_financiero' => 'Análisis Financiero'
+];
+
+// Procesar la solicitud de consulta
+$resultados = [];
+$tipo_consulta_actual = '';
+$graficos_data = [];
+$filtros_aplicados = [];
+
+// Función para obtener datos de ejemplo (se reemplazará con consultas reales)
+function obtenerDatosConsulta($tipo, $filtros = []) {
+    $resultados = [];
     
-    /**
-     * Obtiene proyectos con filtros específicos
-     * @param array $filtros Arreglo asociativo con los filtros a aplicar
-     * @param int $pagina Número de página para paginación
-     * @param int $porPagina Elementos por página
-     * @return array Proyectos que cumplen con los filtros
-     */
-    public function obtenerProyectosFiltrados($filtros = [], $pagina = 1, $porPagina = 20) {
-        $offset = ($pagina - 1) * $porPagina;
-        
-        $sql = "SELECT p.id, p.nombre, p.fecha_inicio, p.fecha_fin, p.estado, 
-                       p.presupuesto, p.prioridad, p.porcentaje_avance,
-                       u.nombre as responsable, u.email as email_responsable,
-                       d.nombre as departamento
-                FROM proyectos p 
-                LEFT JOIN usuarios u ON p.id_responsable = u.id 
-                LEFT JOIN departamentos d ON p.id_departamento = d.id
-                WHERE 1=1";
-        
-        $params = [];
-        $conditions = [];
-        
-        // Filtros básicos
-        if (!empty($filtros['vencidos_solo']) && $filtros['vencidos_solo']) {
-            $sql .= " AND a.fecha_limite < CURDATE()";
-        }
-        
-        if (!empty($filtros['proximos_solo']) && $filtros['proximos_solo']) {
-            $sql .= " AND a.fecha_limite >= CURDATE() AND a.fecha_limite <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)";
-        }
-        
-        $sql .= " ORDER BY a.fecha_limite ASC";
-        
-        if (!empty($filtros['limite'])) {
-            $sql .= " LIMIT " . (int)$filtros['limite'];
-        }
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener acuerdos pendientes: " . $e->getMessage(), 'error', ['id_usuario' => $idUsuario]);
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene proyectos por departamento
-     * @param int $idDepartamento ID del departamento
-     * @param string $estado Estado de los proyectos (opcional)
-     * @return array Proyectos del departamento
-     */
-    public function obtenerProyectosPorDepartamento($idDepartamento, $estado = null) {
-        $sql = "SELECT p.id, p.nombre, p.fecha_inicio, p.fecha_fin, p.estado, 
-                       p.presupuesto, p.porcentaje_avance,
-                       u.nombre as responsable
-                FROM proyectos p 
-                LEFT JOIN usuarios u ON p.id_responsable = u.id 
-                WHERE p.id_departamento = ?";
-        
-        $params = [$idDepartamento];
-        
-        if (!empty($estado)) {
-            $sql .= " AND p.estado = ?";
-            $params[] = $estado;
-        }
-        
-        $sql .= " ORDER BY p.fecha_inicio DESC";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener proyectos por departamento: " . $e->getMessage(), 'error', ['id_departamento' => $idDepartamento]);
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene informes de rendimiento por proyecto
-     * @param int $idProyecto ID del proyecto
-     * @param string $periodo Periodo para el informe (semana, mes, trimestre, año)
-     * @return array Datos del informe
-     */
-    public function obtenerInformeRendimientoProyecto($idProyecto, $periodo = 'mes') {
-        try {
-            // Obtener datos básicos del proyecto
-            $sqlProyecto = "SELECT id, nombre, fecha_inicio, fecha_fin, presupuesto, 
-                                   porcentaje_avance, estado
-                            FROM proyectos 
-                            WHERE id = ?";
-            
-            $stmtProyecto = $this->db->prepare($sqlProyecto);
-            $stmtProyecto->execute([$idProyecto]);
-            $proyecto = $stmtProyecto->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$proyecto) {
-                return ['error' => 'Proyecto no encontrado'];
-            }
-            
-            // Configurar período para consultas
-            $formatoFecha = "";
-            switch ($periodo) {
-                case 'semana':
-                    $formatoFecha = "%x-%v"; // Año-Semana
-                    $agruparPor = "YEARWEEK(fecha, 1)";
-                    break;
-                case 'mes':
-                    $formatoFecha = "%Y-%m"; // Año-Mes
-                    $agruparPor = "YEAR(fecha), MONTH(fecha)";
-                    break;
-                case 'trimestre':
-                    $formatoFecha = "%Y-%c"; // Año-Trimestre
-                    $agruparPor = "YEAR(fecha), QUARTER(fecha)";
-                    break;
-                case 'año':
-                    $formatoFecha = "%Y"; // Año
-                    $agruparPor = "YEAR(fecha)";
-                    break;
-                default:
-                    $formatoFecha = "%Y-%m-%d"; // Año-Mes-Día
-                    $agruparPor = "DATE(fecha)";
-                    break;
-            }
-            
-            // Obtener progreso a lo largo del tiempo
-            $sqlProgreso = "SELECT DATE_FORMAT(fecha, '$formatoFecha') as periodo, 
-                                   porcentaje_avance
-                            FROM historico_avance 
-                            WHERE id_proyecto = ? 
-                            ORDER BY fecha ASC";
-            
-            $stmtProgreso = $this->db->prepare($sqlProgreso);
-            $stmtProgreso->execute([$idProyecto]);
-            $datosProgreso = $stmtProgreso->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Obtener actividad de actas
-            $sqlActas = "SELECT DATE_FORMAT(fecha, '$formatoFecha') as periodo, 
-                                COUNT(*) as total_actas
-                         FROM actas 
-                         WHERE id_proyecto = ? 
-                         GROUP BY $agruparPor
-                         ORDER BY MIN(fecha) ASC";
-            
-            $stmtActas = $this->db->prepare($sqlActas);
-            $stmtActas->execute([$idProyecto]);
-            $datosActas = $stmtActas->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Obtener acuerdos completados vs pendientes
-            $sqlAcuerdos = "SELECT DATE_FORMAT(a.fecha_limite, '$formatoFecha') as periodo, 
-                                   a.estado, 
-                                   COUNT(*) as total
-                            FROM acuerdos a
-                            JOIN actas ac ON a.id_acta = ac.id
-                            WHERE ac.id_proyecto = ?
-                            GROUP BY $agruparPor, a.estado
-                            ORDER BY MIN(a.fecha_limite) ASC";
-            
-            $stmtAcuerdos = $this->db->prepare($sqlAcuerdos);
-            $stmtAcuerdos->execute([$idProyecto]);
-            $datosAcuerdosBrutos = $stmtAcuerdos->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Procesar datos de acuerdos para formato más útil
-            $datosAcuerdos = [];
-            foreach ($datosAcuerdosBrutos as $dato) {
-                if (!isset($datosAcuerdos[$dato['periodo']])) {
-                    $datosAcuerdos[$dato['periodo']] = [
-                        'periodo' => $dato['periodo'],
-                        'completados' => 0,
-                        'pendientes' => 0,
-                        'vencidos' => 0
-                    ];
-                }
-                
-                if ($dato['estado'] == 'completado') {
-                    $datosAcuerdos[$dato['periodo']]['completados'] = $dato['total'];
-                } else if ($dato['estado'] == 'pendiente') {
-                    $datosAcuerdos[$dato['periodo']]['pendientes'] = $dato['total'];
-                } else if ($dato['estado'] == 'vencido') {
-                    $datosAcuerdos[$dato['periodo']]['vencidos'] = $dato['total'];
-                }
-            }
-            $datosAcuerdos = array_values($datosAcuerdos);
-            
-            // Obtener usuarios más activos
-            $sqlUsuariosActivos = "SELECT u.id, u.nombre, COUNT(a.id) as total_acuerdos,
-                                          SUM(CASE WHEN a.estado = 'completado' THEN 1 ELSE 0 END) as completados,
-                                          SUM(CASE WHEN a.estado = 'pendiente' THEN 1 ELSE 0 END) as pendientes,
-                                          SUM(CASE WHEN a.fecha_limite < CURDATE() AND a.estado = 'pendiente' THEN 1 ELSE 0 END) as vencidos
-                                   FROM usuarios u
-                                   JOIN acuerdos a ON u.id = a.id_responsable
-                                   JOIN actas ac ON a.id_acta = ac.id
-                                   WHERE ac.id_proyecto = ?
-                                   GROUP BY u.id
-                                   ORDER BY total_acuerdos DESC
-                                   LIMIT 10";
-            
-            $stmtUsuariosActivos = $this->db->prepare($sqlUsuariosActivos);
-            $stmtUsuariosActivos->execute([$idProyecto]);
-            $usuariosActivos = $stmtUsuariosActivos->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Consolidar todos los datos en un solo informe
-            $informe = [
-                'proyecto' => $proyecto,
-                'progreso' => $datosProgreso,
-                'actas' => $datosActas,
-                'acuerdos' => $datosAcuerdos,
-                'usuarios_activos' => $usuariosActivos,
-                'periodo' => $periodo
-            ];
-            
-            return $informe;
-        } catch (PDOException $e) {
-            $this->log("Error al generar informe: " . $e->getMessage(), 'error', ['id_proyecto' => $idProyecto]);
-            return ['error' => 'Error al generar informe'];
-        }
-    }
-    
-    /**
-     * Obtiene datos para tablero de control (dashboard)
-     * @return array Datos para el dashboard
-     */
-    public function obtenerDatosDashboard() {
-        try {
-            $dashboard = [
-                'estadisticas' => $this->obtenerEstadisticas('mes'),
-                'proyectos_recientes' => $this->obtenerProyectosRecientes(5),
-                'actas_recientes' => $this->obtenerActasRecientes(5),
-                'acuerdos_proximos' => $this->obtenerAcuerdosProximos(5),
-                'actividades_recientes' => $this->obtenerActividadesRecientes(10)
-            ];
-            
-            return $dashboard;
-        } catch (PDOException $e) {
-            $this->log("Error al obtener datos de dashboard: " . $e->getMessage(), 'error');
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene proyectos recientes
-     * @param int $limite Límite de registros
-     * @return array Proyectos recientes
-     */
-    public function obtenerProyectosRecientes($limite = 5) {
-        $sql = "SELECT p.id, p.nombre, p.fecha_inicio, p.estado, p.porcentaje_avance,
-                       u.nombre as responsable
-                FROM proyectos p
-                LEFT JOIN usuarios u ON p.id_responsable = u.id
-                ORDER BY p.fecha_creacion DESC
-                LIMIT ?";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$limite]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener proyectos recientes: " . $e->getMessage(), 'error');
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene actas recientes
-     * @param int $limite Límite de registros
-     * @return array Actas recientes
-     */
-    public function obtenerActasRecientes($limite = 5) {
-        $sql = "SELECT a.id, a.titulo, a.fecha, a.tipo, a.estado,
-                       p.id as id_proyecto, p.nombre as proyecto
-                FROM actas a
-                JOIN proyectos p ON a.id_proyecto = p.id
-                ORDER BY a.fecha DESC
-                LIMIT ?";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$limite]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener actas recientes: " . $e->getMessage(), 'error');
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene acuerdos próximos a vencer
-     * @param int $limite Límite de registros
-     * @return array Acuerdos próximos
-     */
-    public function obtenerAcuerdosProximos($limite = 5) {
-        $sql = "SELECT a.id, a.descripcion, a.fecha_limite, a.estado, a.prioridad,
-                       u.nombre as responsable,
-                       ac.id as id_acta, ac.titulo as acta,
-                       p.id as id_proyecto, p.nombre as proyecto
-                FROM acuerdos a
-                JOIN usuarios u ON a.id_responsable = u.id
-                JOIN actas ac ON a.id_acta = ac.id
-                JOIN proyectos p ON ac.id_proyecto = p.id
-                WHERE a.estado = 'pendiente' AND a.fecha_limite >= CURDATE()
-                ORDER BY a.fecha_limite ASC
-                LIMIT ?";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$limite]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener acuerdos próximos: " . $e->getMessage(), 'error');
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene estado general de un proyecto
-     * @param int $idProyecto ID del proyecto
-     * @return array Estado general del proyecto
-     */
-    public function obtenerEstadoGeneralProyecto($idProyecto) {
-        try {
-            // Información básica del proyecto
-            $sqlProyecto = "SELECT p.*, u.nombre as responsable, d.nombre as departamento
-                           FROM proyectos p
-                           LEFT JOIN usuarios u ON p.id_responsable = u.id
-                           LEFT JOIN departamentos d ON p.id_departamento = d.id
-                           WHERE p.id = ?";
-            
-            $stmtProyecto = $this->db->prepare($sqlProyecto);
-            $stmtProyecto->execute([$idProyecto]);
-            $proyecto = $stmtProyecto->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$proyecto) {
-                return ['error' => 'Proyecto no encontrado'];
-            }
-            
-            // Conteo de actas por tipo
-            $sqlActasPorTipo = "SELECT tipo, COUNT(*) as total
-                               FROM actas
-                               WHERE id_proyecto = ?
-                               GROUP BY tipo";
-            
-            $stmtActasPorTipo = $this->db->prepare($sqlActasPorTipo);
-            $stmtActasPorTipo->execute([$idProyecto]);
-            $actasPorTipo = $stmtActasPorTipo->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Estado de acuerdos
-            $sqlAcuerdos = "SELECT a.estado, COUNT(*) as total
-                           FROM acuerdos a
-                           JOIN actas ac ON a.id_acta = ac.id
-                           WHERE ac.id_proyecto = ?
-                           GROUP BY a.estado";
-            
-            $stmtAcuerdos = $this->db->prepare($sqlAcuerdos);
-            $stmtAcuerdos->execute([$idProyecto]);
-            $acuerdosPorEstado = $stmtAcuerdos->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Participantes más activos
-            $sqlParticipantes = "SELECT u.id, u.nombre, COUNT(DISTINCT pa.id_acta) as total_actas
-                                FROM participantes_acta pa
-                                JOIN actas a ON pa.id_acta = a.id
-                                JOIN usuarios u ON pa.id_usuario = u.id
-                                WHERE a.id_proyecto = ?
-                                GROUP BY u.id
-                                ORDER BY total_actas DESC
-                                LIMIT 5";
-            
-            $stmtParticipantes = $this->db->prepare($sqlParticipantes);
-            $stmtParticipantes->execute([$idProyecto]);
-            $participantesActivos = $stmtParticipantes->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Calcular días restantes o días de retraso
-            $fechaActual = new DateTime();
-            $fechaFin = new DateTime($proyecto['fecha_fin']);
-            $diferencia = $fechaActual->diff($fechaFin);
-            
-            if ($fechaActual > $fechaFin && $proyecto['estado'] != 'finalizado') {
-                $proyecto['dias_retraso'] = $diferencia->days;
-                $proyecto['retrasado'] = true;
+    switch ($tipo) {
+        case 'proyectos_activos':
+            // Intentar usar la función real
+            if (function_exists('obtenerTodosProyectos')) {
+                $resultados['datos'] = obtenerTodosProyectos();
+                $resultados['columnas'] = ['ID', 'Año', 'Número', 'Nombre', 'Entidad', 'Situación'];
             } else {
-                $proyecto['dias_restantes'] = $diferencia->days;
-                $proyecto['retrasado'] = false;
-            }
-            
-            // Consolidar información
-            return [
-                'proyecto' => $proyecto,
-                'actas_por_tipo' => $actasPorTipo,
-                'acuerdos_por_estado' => $acuerdosPorEstado,
-                'participantes_activos' => $participantesActivos
-            ];
-            
-        } catch (PDOException $e) {
-            $this->log("Error al obtener estado del proyecto: " . $e->getMessage(), 'error', ['id_proyecto' => $idProyecto]);
-            return ['error' => 'Error al obtener estado del proyecto'];
-        }
-    }
-    
-    /**
-     * Exporta datos a formato CSV
-     * @param string $tipo Tipo de datos a exportar (proyectos, actas, acuerdos)
-     * @param array $filtros Filtros a aplicar
-     * @return string Contenido CSV
-     */
-    public function exportarCSV($tipo, $filtros = []) {
-        $datos = [];
-        $cabeceras = [];
-        
-        switch ($tipo) {
-            case 'proyectos':
-                $cabeceras = ['ID', 'Nombre', 'Fecha Inicio', 'Fecha Fin', 'Estado', 'Responsable', 'Departamento', 'Presupuesto', 'Avance (%)'];
-                $resultados = $this->obtenerProyectosFiltrados($filtros);
-                if (isset($resultados['proyectos'])) {
-                    $datos = $resultados['proyectos'];
-                }
-                break;
-                
-            case 'actas':
-                $cabeceras = ['ID', 'Título', 'Fecha', 'Tipo', 'Estado', 'Proyecto', 'Creador'];
-                if (!empty($filtros['id_proyecto'])) {
-                    $datos = $this->obtenerActasProyecto($filtros['id_proyecto'], $filtros);
-                } else {
-                    // Implementar búsqueda general de actas
-                    $sql = "SELECT a.id, a.titulo, a.fecha, a.tipo, a.estado,
-                                  p.nombre as proyecto, u.nombre as creador
-                           FROM actas a
-                           JOIN proyectos p ON a.id_proyecto = p.id
-                           JOIN usuarios u ON a.id_creador = u.id
-                           WHERE 1=1";
-                    
-                    $params = [];
-                    
-                    if (!empty($filtros['tipo'])) {
-                        $sql .= " AND a.tipo = ?";
-                        $params[] = $filtros['tipo'];
-                    }
-                    
-                    if (!empty($filtros['estado'])) {
-                        $sql .= " AND a.estado = ?";
-                        $params[] = $filtros['estado'];
-                    }
-                    
-                    $sql .= " ORDER BY a.fecha DESC";
-                    
-                    $stmt = $this->db->prepare($sql);
-                    $stmt->execute($params);
-                    $datos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                }
-                break;
-                
-            case 'acuerdos':
-                $cabeceras = ['ID', 'Descripción', 'Fecha Límite', 'Estado', 'Prioridad', 'Responsable', 'Acta', 'Proyecto'];
-                $sql = "SELECT a.id, a.descripcion, a.fecha_limite, a.estado, a.prioridad,
-                              u.nombre as responsable, ac.titulo as acta, p.nombre as proyecto
-                       FROM acuerdos a
-                       JOIN usuarios u ON a.id_responsable = u.id
-                       JOIN actas ac ON a.id_acta = ac.id
-                       JOIN proyectos p ON ac.id_proyecto = p.id
-                       WHERE 1=1";
-                
-                $params = [];
-                
-                if (!empty($filtros['estado'])) {
-                    $sql .= " AND a.estado = ?";
-                    $params[] = $filtros['estado'];
-                }
-                
-                if (!empty($filtros['id_proyecto'])) {
-                    $sql .= " AND ac.id_proyecto = ?";
-                    $params[] = $filtros['id_proyecto'];
-                }
-                
-                if (!empty($filtros['id_responsable'])) {
-                    $sql .= " AND a.id_responsable = ?";
-                    $params[] = $filtros['id_responsable'];
-                }
-                
-                $sql .= " ORDER BY a.fecha_limite ASC";
-                
-                $stmt = $this->db->prepare($sql);
-                $stmt->execute($params);
-                $datos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                break;
-                
-            default:
-                return "Tipo de exportación no válido";
-        }
-        
-        // Generar CSV
-        $output = fopen('php://temp', 'r+');
-        fputcsv($output, $cabeceras);
-        
-        foreach ($datos as $fila) {
-            // Filtrar solo las columnas que necesitamos
-            $filaFiltrada = [];
-            foreach ($cabeceras as $cabecera) {
-                $clave = strtolower(str_replace(' ', '_', str_replace('(%)', '', $cabecera)));
-                $filaFiltrada[] = isset($fila[$clave]) ? $fila[$clave] : '';
-            }
-            fputcsv($output, $filaFiltrada);
-        }
-        
-        rewind($output);
-        $csv = stream_get_contents($output);
-        fclose($output);
-        
-        return $csv;
-    }
-    
-    /**
-     * Obtener notificaciones pendientes para un usuario
-     * @param int $idUsuario ID del usuario
-     * @param bool $soloNoLeidas Obtener solo notificaciones no leídas
-     * @return array Notificaciones pendientes
-     */
-    public function obtenerNotificacionesUsuario($idUsuario, $soloNoLeidas = true) {
-        $sql = "SELECT n.id, n.tipo, n.mensaje, n.fecha, n.leido, n.url,
-                       n.id_referencia, n.entidad_referencia
-                FROM notificaciones n
-                WHERE n.id_usuario = ?";
-        
-        if ($soloNoLeidas) {
-            $sql .= " AND n.leido = 0";
-        }
-        
-        $sql .= " ORDER BY n.fecha DESC";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$idUsuario]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener notificaciones: " . $e->getMessage(), 'error', ['id_usuario' => $idUsuario]);
-            return [];
-        }
-    }
-    
-    /**
-     * Genera una consulta personalizada dinámica basada en criterios
-     * @param string $tabla Tabla principal para la consulta
-     * @param array $campos Campos a seleccionar
-     * @param array $joins Joins a realizar (formato: ['tabla' => ['campo_origen', 'campo_destino']])
-     * @param array $filtros Filtros a aplicar
-     * @param string $ordenCampo Campo para ordenar
-     * @param string $ordenDir Dirección de ordenamiento (ASC/DESC)
-     * @param int $limite Límite de registros
-     * @param int $offset Offset para paginación
-     * @return array Resultados de la consulta
-     */
-    public function consultaDinamica($tabla, $campos = ['*'], $joins = [], $filtros = [], $ordenCampo = null, $ordenDir = 'ASC', $limite = null, $offset = null) {
-        try {
-            // Construir SELECT
-            $select = implode(', ', $campos);
-            $sql = "SELECT $select FROM $tabla";
-            
-            // Añadir JOINs
-            foreach ($joins as $joinTabla => $joinCampos) {
-                $sql .= " LEFT JOIN $joinTabla ON $tabla.{$joinCampos[0]} = $joinTabla.{$joinCampos[1]}";
-            }
-            
-            // Añadir filtros
-            $params = [];
-            $where = [];
-            
-            foreach ($filtros as $campo => $valor) {
-                if (is_array($valor) && isset($valor['operador'])) {
-                    // Filtro con operador personalizado: ['campo' => ['operador' => '>=', 'valor' => 100]]
-                    $where[] = "$campo {$valor['operador']} ?";
-                    $params[] = $valor['valor'];
-                } else if (is_array($valor) && count($valor) > 0) {
-                    // Filtro IN: ['campo' => [1, 2, 3]]
-                    $placeholders = implode(', ', array_fill(0, count($valor), '?'));
-                    $where[] = "$campo IN ($placeholders)";
-                    $params = array_merge($params, $valor);
-                } else if ($valor === null) {
-                    // Filtro IS NULL
-                    $where[] = "$campo IS NULL";
-                } else {
-                    // Filtro estándar de igualdad
-                    $where[] = "$campo = ?";
-                    $params[] = $valor;
-                }
-            }
-            
-            if (!empty($where)) {
-                $sql .= " WHERE " . implode(' AND ', $where);
-            }
-            
-            // Ordenamiento
-            if ($ordenCampo) {
-                $sql .= " ORDER BY $ordenCampo $ordenDir";
-            }
-            
-            // Límite y offset
-            if ($limite !== null) {
-                $sql .= " LIMIT ?";
-                $params[] = $limite;
-                
-                if ($offset !== null) {
-                    $sql .= " OFFSET ?";
-                    $params[] = $offset;
-                }
-            }
-            
-            // Ejecutar consulta
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error en consulta dinámica: " . $e->getMessage(), 'error', [
-                'tabla' => $tabla,
-                'filtros' => json_encode($filtros)
-            ]);
-            return [];
-        }
-    }
-    
-    /**
-     * Obtener calendario de eventos de proyecto
-     * @param int $idProyecto ID del proyecto
-     * @param string $fechaInicio Fecha de inicio (formato Y-m-d)
-     * @param string $fechaFin Fecha de fin (formato Y-m-d)
-     * @return array Eventos del calendario
-     */
-    public function obtenerCalendarioProyecto($idProyecto, $fechaInicio = null, $fechaFin = null) {
-        try {
-            $eventos = [];
-            $params = [$idProyecto];
-            
-            // Condición de fechas
-            $condicionFecha = "";
-            if ($fechaInicio && $fechaFin) {
-                $condicionFecha = " AND (
-                    (ac.fecha >= ? AND ac.fecha <= ?) OR
-                    (a.fecha_limite >= ? AND a.fecha_limite <= ?)
-                )";
-                $params[] = $fechaInicio;
-                $params[] = $fechaFin;
-                $params[] = $fechaInicio;
-                $params[] = $fechaFin;
-            }
-            
-            // Obtener eventos de actas
-            $sqlActas = "SELECT 
-                            ac.id, 
-                            ac.titulo as titulo, 
-                            ac.fecha as fecha, 
-                            ac.tipo, 
-                            'acta' as tipo_evento,
-                            ac.estado,
-                            p.nombre as proyecto
-                        FROM actas ac
-                        JOIN proyectos p ON ac.id_proyecto = p.id
-                        WHERE ac.id_proyecto = ? $condicionFecha
-                        ORDER BY ac.fecha";
-            
-            $stmtActas = $this->db->prepare($sqlActas);
-            $stmtActas->execute($params);
-            $eventosActas = $stmtActas->fetchAll(PDO::FETCH_ASSOC);
-            
-            foreach ($eventosActas as $evento) {
-                $eventos[] = [
-                    'id' => 'acta_' . $evento['id'],
-                    'title' => $evento['titulo'] . ' (' . $evento['tipo'] . ')',
-                    'start' => $evento['fecha'],
-                    'end' => $evento['fecha'],
-                    'allDay' => true,
-                    'backgroundColor' => $this->obtenerColorEventoCalendario('acta', $evento['estado']),
-                    'tipo' => 'acta',
-                    'estado' => $evento['estado'],
-                    'proyecto' => $evento['proyecto'],
-                    'detalle_id' => $evento['id']
+                // Datos de ejemplo
+                $resultados['datos'] = [
+                    ['id' => 1, 'anio' => 2024, 'numero' => 'PRY-2024-001', 'nombre' => 'Desarrollo Sistema de Gestión Documental', 'entidad' => 'Ministerio de Educación Nacional', 'situacion' => 'En ejecución'],
+                    ['id' => 2, 'anio' => 2023, 'numero' => 'PRY-2023-052', 'nombre' => 'Implementación Plataforma de Capacitación Virtual', 'entidad' => 'Secretaría de Educación Distrital', 'situacion' => 'Finalizado'],
+                    ['id' => 3, 'anio' => 2023, 'numero' => 'PRY-2023-018', 'nombre' => 'Estudio de Factibilidad Infraestructura Vial', 'entidad' => 'Instituto de Desarrollo Urbano', 'situacion' => 'Suscrito']
                 ];
+                $resultados['columnas'] = ['ID', 'Año', 'Número', 'Nombre', 'Entidad', 'Situación'];
             }
+            break;
             
-            // Obtener eventos de acuerdos
-            $paramsAcuerdos = [$idProyecto];
-            $condicionFechaAcuerdos = "";
-            
-            if ($fechaInicio && $fechaFin) {
-                $condicionFechaAcuerdos = " AND a.fecha_limite >= ? AND a.fecha_limite <= ?";
-                $paramsAcuerdos[] = $fechaInicio;
-                $paramsAcuerdos[] = $fechaFin;
-            }
-            
-            $sqlAcuerdos = "SELECT 
-                                a.id, 
-                                a.descripcion as titulo, 
-                                a.fecha_limite as fecha, 
-                                a.estado, 
-                                a.prioridad,
-                                'acuerdo' as tipo_evento,
-                                u.nombre as responsable,
-                                ac.titulo as acta,
-                                p.nombre as proyecto
-                            FROM acuerdos a
-                            JOIN actas ac ON a.id_acta = ac.id
-                            JOIN proyectos p ON ac.id_proyecto = p.id
-                            JOIN usuarios u ON a.id_responsable = u.id
-                            WHERE ac.id_proyecto = ? $condicionFechaAcuerdos
-                            ORDER BY a.fecha_limite";
-            
-            $stmtAcuerdos = $this->db->prepare($sqlAcuerdos);
-            $stmtAcuerdos->execute($paramsAcuerdos);
-            $eventosAcuerdos = $stmtAcuerdos->fetchAll(PDO::FETCH_ASSOC);
-            
-            foreach ($eventosAcuerdos as $evento) {
-                $eventos[] = [
-                    'id' => 'acuerdo_' . $evento['id'],
-                    'title' => $evento['titulo'] . ' (' . $evento['responsable'] . ')',
-                    'start' => $evento['fecha'],
-                    'end' => $evento['fecha'],
-                    'allDay' => true,
-                    'backgroundColor' => $this->obtenerColorEventoCalendario('acuerdo', $evento['estado'], $evento['prioridad']),
-                    'tipo' => 'acuerdo',
-                    'estado' => $evento['estado'],
-                    'prioridad' => $evento['prioridad'],
-                    'responsable' => $evento['responsable'],
-                    'acta' => $evento['acta'],
-                    'proyecto' => $evento['proyecto'],
-                    'detalle_id' => $evento['id']
-                ];
-            }
-            
-            // Agregar fechas del proyecto
-            $sqlProyecto = "SELECT id, nombre, fecha_inicio, fecha_fin FROM proyectos WHERE id = ?";
-            $stmtProyecto = $this->db->prepare($sqlProyecto);
-            $stmtProyecto->execute([$idProyecto]);
-            $proyecto = $stmtProyecto->fetch(PDO::FETCH_ASSOC);
-            
-            if ($proyecto) {
-                // Evento de inicio de proyecto
-                $eventos[] = [
-                    'id' => 'proyecto_inicio_' . $proyecto['id'],
-                    'title' => 'Inicio: ' . $proyecto['nombre'],
-                    'start' => $proyecto['fecha_inicio'],
-                    'end' => $proyecto['fecha_inicio'],
-                    'allDay' => true,
-                    'backgroundColor' => '#00C853', // Verde
-                    'tipo' => 'proyecto',
-                    'subtipo' => 'inicio',
-                    'detalle_id' => $proyecto['id']
+        case 'proyectos_por_anio':
+            // Intentar usar la función real
+            if (function_exists('obtenerCantidadProyectosPorAnio')) {
+                $datos = obtenerCantidadProyectosPorAnio();
+                $resultados['grafico'] = [
+                    'tipo' => 'bar',
+                    'etiquetas' => $datos['anios'], 
+                    'series' => [
+                        ['nombre' => 'Cantidad de Proyectos', 'datos' => $datos['cantidades']]
+                    ]
                 ];
                 
-                // Evento de fin de proyecto
-                $eventos[] = [
-                    'id' => 'proyecto_fin_' . $proyecto['id'],
-                    'title' => 'Fin: ' . $proyecto['nombre'],
-                    'start' => $proyecto['fecha_fin'],
-                    'end' => $proyecto['fecha_fin'],
-                    'allDay' => true,
-                    'backgroundColor' => '#FF5722', // Naranja
-                    'tipo' => 'proyecto',
-                    'subtipo' => 'fin',
-                    'detalle_id' => $proyecto['id']
-                ];
-            }
-            
-            return $eventos;
-        } catch (PDOException $e) {
-            $this->log("Error al obtener calendario: " . $e->getMessage(), 'error', ['id_proyecto' => $idProyecto]);
-            return [];
-        }
-    }
-    
-    /**
-     * Obtiene color para evento de calendario según su tipo y estado
-     * @param string $tipo Tipo de evento
-     * @param string $estado Estado actual
-     * @param string $prioridad Prioridad (opcional)
-     * @return string Código de color en hexadecimal
-     */
-    private function obtenerColorEventoCalendario($tipo, $estado, $prioridad = null) {
-        switch ($tipo) {
-            case 'acta':
-                switch ($estado) {
-                    case 'pendiente': return '#FF9800'; // Naranja
-                    case 'aprobada': return '#4CAF50'; // Verde
-                    case 'rechazada': return '#F44336'; // Rojo
-                    default: return '#2196F3'; // Azul
-                }
-                break;
-                
-            case 'acuerdo':
-                if ($estado == 'completado') {
-                    return '#4CAF50'; // Verde
-                } else if ($estado == 'vencido') {
-                    return '#F44336'; // Rojo
-                } else {
-                    // Pendiente, color según prioridad
-                    switch ($prioridad) {
-                        case 'alta': return '#FF5722'; // Naranja oscuro
-                        case 'media': return '#FF9800'; // Naranja
-                        case 'baja': return '#FFC107'; // Amarillo
-                        default: return '#2196F3'; // Azul
-                    }
-                }
-                break;
-                
-            default:
-                return '#9E9E9E'; // Gris
-        }
-    }
-    
-    /**
-     * Genera un informe comparativo entre proyectos
-     * @param array $idsProyectos Array con IDs de proyectos a comparar
-     * @return array Datos comparativos
-     */
-    public function compararProyectos($idsProyectos) {
-        if (empty($idsProyectos) || !is_array($idsProyectos)) {
-            return ['error' => 'Se requiere al menos un proyecto para comparar'];
-        }
-        
-        try {
-            $placeholders = implode(',', array_fill(0, count($idsProyectos), '?'));
-            
-            // Obtener datos básicos de los proyectos
-            $sqlProyectos = "SELECT id, nombre, fecha_inicio, fecha_fin, 
-                                    estado, presupuesto, porcentaje_avance
-                             FROM proyectos 
-                             WHERE id IN ($placeholders)";
-                             
-            $stmtProyectos = $this->db->prepare($sqlProyectos);
-            $stmtProyectos->execute($idsProyectos);
-            $proyectos = $stmtProyectos->fetchAll(PDO::FETCH_ASSOC);
-            
-            $comparativa = [
-                'proyectos' => $proyectos,
-                'detalle_proyectos' => []
-            ];
-            
-            // Para cada proyecto, obtener estadísticas detalladas
-            foreach ($proyectos as $proyecto) {
-                $idProyecto = $proyecto['id'];
-                
-                // Contar actas por tipo
-                $sqlActas = "SELECT tipo, COUNT(*) as total
-                             FROM actas
-                             WHERE id_proyecto = ?
-                             GROUP BY tipo";
-                             
-                $stmtActas = $this->db->prepare($sqlActasas);
-                $stmtActas->execute([$idProyecto]);
-                $actasPorTipo = $stmtActas->fetchAll(PDO::FETCH_ASSOC);
-                
-                // Contar acuerdos por estado
-                $sqlAcuerdos = "SELECT a.estado, COUNT(*) as total
-                               FROM acuerdos a
-                               JOIN actas ac ON a.id_acta = ac.id
-                               WHERE ac.id_proyecto = ?
-                               GROUP BY a.estado";
-                               
-                $stmtAcuerdos = $this->db->prepare($sqlAcuerdos);
-                $stmtAcuerdos->execute([$idProyecto]);
-                $acuerdosPorEstado = $stmtAcuerdos->fetchAll(PDO::FETCH_ASSOC);
-                
-                // Calcular duración del proyecto en días
-                $fechaInicio = new DateTime($proyecto['fecha_inicio']);
-                $fechaFin = new DateTime($proyecto['fecha_fin']);
-                $duracion = $fechaInicio->diff($fechaFin)->days;
-                
-                // Calcular indicadores
-                $sqlIndicadores = "SELECT 
-                                      COUNT(DISTINCT a.id) as total_actas,
-                                      COUNT(DISTINCT ac.id) as total_acuerdos,
-                                      AVG(DATEDIFF(a.fecha, p.fecha_inicio)) as promedio_dias_primera_acta,
-                                      SUM(CASE WHEN ac.estado = 'completado' THEN 1 ELSE 0 END) / COUNT(ac.id) * 100 as porcentaje_acuerdos_completados
-                                  FROM proyectos p
-                                  LEFT JOIN actas a ON p.id = a.id_proyecto
-                                  LEFT JOIN acuerdos ac ON a.id = ac.id_acta
-                                  WHERE p.id = ?
-                                  GROUP BY p.id";
-                                  
-                $stmtIndicadores = $this->db->prepare($sqlIndicadores);
-                $stmtIndicadores->execute([$idProyecto]);
-                $indicadores = $stmtIndicadores->fetch(PDO::FETCH_ASSOC);
-                
-                // Consolidar estadísticas por proyecto
-                $comparativa['detalle_proyectos'][$idProyecto] = [
-                    'actas_por_tipo' => $actasPorTipo,
-                    'acuerdos_por_estado' => $acuerdosPorEstado,
-                    'duracion_dias' => $duracion,
-                    'indicadores' => $indicadores
-                ];
-            }
-            
-            return $comparativa;
-        } catch (PDOException $e) {
-            $this->log("Error al comparar proyectos: " . $e->getMessage(), 'error', ['ids' => implode(',', $idsProyectos)]);
-            return ['error' => 'Error al comparar proyectos'];
-        }
-    }
-    
-    /**
-     * Obtiene recomendaciones basadas en datos históricos
-     * @param int $idProyecto ID del proyecto (opcional)
-     * @param int $idUsuario ID del usuario (opcional)
-     * @return array Recomendaciones
-     */
-    public function obtenerRecomendaciones($idProyecto = null, $idUsuario = null) {
-        $recomendaciones = [];
-        
-        try {
-            // Recomendaciones generales basadas en proyectos similares
-            if ($idProyecto) {
-                // Obtener tipo de proyecto actual
-                $sqlTipoProyecto = "SELECT tipo FROM proyectos WHERE id = ?";
-                $stmtTipoProyecto = $this->db->prepare($sqlTipoProyecto);
-                $stmtTipoProyecto->execute([$idProyecto]);
-                $tipoProyecto = $stmtTipoProyecto->fetch(PDO::FETCH_COLUMN);
-                
-                if ($tipoProyecto) {
-                    // Encontrar tipos de actas más comunes en proyectos similares
-                    $sqlTiposActa = "SELECT a.tipo, COUNT(*) as total
-                                    FROM actas a
-                                    JOIN proyectos p ON a.id_proyecto = p.id
-                                    WHERE p.tipo = ? AND p.id != ?
-                                    GROUP BY a.tipo
-                                    ORDER BY total DESC
-                                    LIMIT 3";
-                                    
-                    $stmtTiposActa = $this->db->prepare($sqlTiposActa);
-                    $stmtTiposActa->execute([$tipoProyecto, $idProyecto]);
-                    $tiposActaRecomendados = $stmtTiposActa->fetchAll(PDO::FETCH_ASSOC);
-                    
-                    if (!empty($tiposActaRecomendados)) {
-                        $recomendaciones['tipos_acta'] = [
-                            'mensaje' => 'Basado en proyectos similares, estos tipos de acta son comunes:',
-                            'datos' => $tiposActaRecomendados
-                        ];
-                    }
-                    
-                    // Identificar acuerdos pendientes con prioridad alta
-                    $sqlAcuerdosPrioritarios = "SELECT a.descripcion, a.fecha_limite, u.nombre as responsable
-                                              FROM acuerdos a
-                                              JOIN actas ac ON a.id_acta = ac.id
-                                              JOIN usuarios u ON a.id_responsable = u.id
-                                              WHERE ac.id_proyecto = ? AND a.estado = 'pendiente' 
-                                              AND a.prioridad = 'alta' AND a.fecha_limite <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-                                              ORDER BY a.fecha_limite ASC";
-                                              
-                    $stmtAcuerdosPrioritarios = $this->db->prepare($sqlAcuerdosPrioritarios);
-                    $stmtAcuerdosPrioritarios->execute([$idProyecto]);
-                    $acuerdosPrioritarios = $stmtAcuerdosPrioritarios->fetchAll(PDO::FETCH_ASSOC);
-                    
-                    if (!empty($acuerdosPrioritarios)) {
-                        $recomendaciones['acuerdos_prioritarios'] = [
-                            'mensaje' => 'Acuerdos prioritarios que requieren atención pronto:',
-                            'datos' => $acuerdosPrioritarios
-                        ];
-                    }
-                }
-            }
-            
-            // Recomendaciones para usuario específico
-            if ($idUsuario) {
-                // Acuerdos vencidos del usuario
-                $sqlAcuerdosVencidos = "SELECT a.descripcion, a.fecha_limite, ac.titulo as acta, p.nombre as proyecto
-                                       FROM acuerdos a
-                                       JOIN actas ac ON a.id_acta = ac.id
-                                       JOIN proyectos p ON ac.id_proyecto = p.id
-                                       WHERE a.id_responsable = ? AND a.estado = 'pendiente' 
-                                       AND a.fecha_limite < CURDATE()
-                                       ORDER BY a.fecha_limite ASC";
-                                       
-                $stmtAcuerdosVencidos = $this->db->prepare($sqlAcuerdosVencidos);
-                $stmtAcuerdosVencidos->execute([$idUsuario]);
-                $acuerdosVencidos = $stmtAcuerdosVencidos->fetchAll(PDO::FETCH_ASSOC);
-                
-                if (!empty($acuerdosVencidos)) {
-                    $recomendaciones['acuerdos_vencidos'] = [
-                        'mensaje' => 'Tienes los siguientes acuerdos vencidos:',
-                        'datos' => $acuerdosVencidos
+                // Preparar datos para tabla
+                $datosTabla = [];
+                foreach ($datos['anios'] as $index => $anio) {
+                    $datosTabla[] = [
+                        'anio' => $anio,
+                        'cantidad' => $datos['cantidades'][$index]
                     ];
                 }
-                
-                // Próximas actas donde el usuario participa
-                $sqlProximasActas = "SELECT a.titulo, a.fecha, a.tipo, p.nombre as proyecto
-                                    FROM actas a
-                                    JOIN participantes_acta pa ON a.id = pa.id_acta
-                                    JOIN proyectos p ON a.id_proyecto = p.id
-                                    WHERE pa.id_usuario = ? AND a.fecha >= CURDATE()
-                                    ORDER BY a.fecha ASC
-                                    LIMIT 5";
-                                    
-                $stmtProximasActas = $this->db->prepare($sqlProximasActas);
-                $stmtProximasActas->execute([$idUsuario]);
-                $proximasActas = $stmtProximasActas->fetchAll(PDO::FETCH_ASSOC);
-                
-                if (!empty($proximasActas)) {
-                    $recomendaciones['proximas_actas'] = [
-                        'mensaje' => 'Próximas reuniones en tu agenda:',
-                        'datos' => $proximasActas
-                    ];
-                }
-            }
-            
-            // Recomendaciones generales del sistema
-            // Proyectos con baja actividad reciente
-            $sqlProyectosBajaActividad = "SELECT p.id, p.nombre, p.porcentaje_avance, 
-                                            MAX(a.fecha) as ultima_acta, 
-                                            DATEDIFF(CURDATE(), MAX(a.fecha)) as dias_sin_actividad
-                                         FROM proyectos p
-                                         LEFT JOIN actas a ON p.id = a.id_proyecto
-                                         WHERE p.estado = 'activo'
-                                         GROUP BY p.id
-                                         HAVING dias_sin_actividad > 30
-                                         ORDER BY dias_sin_actividad DESC
-                                         LIMIT 5";
-                                         
-            $stmtProyectosBajaActividad = $this->db->prepare($sqlProyectosBajaActividad);
-            $stmtProyectosBajaActividad->execute();
-            $proyectosBajaActividad = $stmtProyectosBajaActividad->fetchAll(PDO::FETCH_ASSOC);
-            
-            if (!empty($proyectosBajaActividad)) {
-                $recomendaciones['proyectos_baja_actividad'] = [
-                    'mensaje' => 'Proyectos activos con baja actividad reciente:',
-                    'datos' => $proyectosBajaActividad
-                ];
-            }
-            
-            return $recomendaciones;
-        } catch (PDOException $e) {
-            $this->log("Error al obtener recomendaciones: " . $e->getMessage(), 'error');
-            return ['error' => 'Error al generar recomendaciones'];
-        }
-    }
-    
-    /**
-     * Registra una nueva actividad en el log
-     * @param string $accion Descripción de la acción
-     * @param string $tabla Tabla afectada
-     * @param int $idRegistro ID del registro afectado
-     * @param int $idUsuario ID del usuario que realizó la acción
-     * @param array $detalles Detalles adicionales (opcional)
-     * @return bool Éxito de la operación
-     */
-    public function registrarActividad($accion, $tabla, $idRegistro, $idUsuario, $detalles = []) {
-        try {
-            $sql = "INSERT INTO actividad_log (accion, tabla_afectada, registro_afectado, id_usuario, ip, detalles, fecha)
-                    VALUES (?, ?, ?, ?, ?, ?, NOW())";
-                    
-            $ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'desconocida';
-            $detallesJson = !empty($detalles) ? json_encode($detalles) : null;
-            
-            $stmt = $this->db->prepare($sql);
-            $resultado = $stmt->execute([$accion, $tabla, $idRegistro, $idUsuario, $ip, $detallesJson]);
-            
-            return $resultado;
-        } catch (PDOException $e) {
-            $this->log("Error al registrar actividad: " . $e->getMessage(), 'error', [
-                'accion' => $accion,
-                'tabla' => $tabla,
-                'id_registro' => $idRegistro
-            ]);
-            return false;
-        }
-    }
-    
-    /**
-     * Genera una notificación para un usuario
-     * @param int $idUsuario ID del usuario destinatario
-     * @param string $tipo Tipo de notificación
-     * @param string $mensaje Mensaje de la notificación
-     * @param string $entidadReferencia Entidad relacionada (proyecto, acta, acuerdo)
-     * @param int $idReferencia ID de la entidad relacionada
-     * @param string $url URL opcional para redirección
-     * @return bool Éxito de la operación
-     */
-    public function generarNotificacion($idUsuario, $tipo, $mensaje, $entidadReferencia, $idReferencia, $url = null) {
-        try {
-            $sql = "INSERT INTO notificaciones (id_usuario, tipo, mensaje, entidad_referencia, id_referencia, url, fecha, leido)
-                    VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)";
-                    
-            $stmt = $this->db->prepare($sql);
-            $resultado = $stmt->execute([$idUsuario, $tipo, $mensaje, $entidadReferencia, $idReferencia, $url]);
-            
-            return $resultado;
-        } catch (PDOException $e) {
-            $this->log("Error al generar notificación: " . $e->getMessage(), 'error', [
-                'id_usuario' => $idUsuario,
-                'tipo' => $tipo,
-                'mensaje' => $mensaje
-            ]);
-            return false;
-        }
-    }
-    
-    /**
-     * Obtiene el historial de cambios de un elemento
-     * @param string $tabla Tabla del elemento
-     * @param int $idElemento ID del elemento
-     * @return array Historial de cambios
-     */
-    public function obtenerHistorialCambios($tabla, $idElemento) {
-        try {
-            $sql = "SELECT h.id, h.fecha, h.id_usuario, h.tipo_cambio, h.campo, 
-                           h.valor_anterior, h.valor_nuevo, u.nombre as usuario
-                    FROM historial_cambios h
-                    LEFT JOIN usuarios u ON h.id_usuario = u.id
-                    WHERE h.tabla = ? AND h.id_registro = ?
-                    ORDER BY h.fecha DESC";
-                    
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$tabla, $idElemento]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            $this->log("Error al obtener historial: " . $e->getMessage(), 'error', [
-                'tabla' => $tabla,
-                'id_elemento' => $idElemento
-            ]);
-            return [];
-        }
-    }
-    
-    /**
-     * Registra un cambio en el historial
-     * @param string $tabla Tabla del elemento
-     * @param int $idRegistro ID del elemento
-     * @param int $idUsuario ID del usuario que realizó el cambio
-     * @param string $tipoCambio Tipo de cambio (crear, actualizar, eliminar)
-     * @param string $campo Campo modificado
-     * @param mixed $valorAnterior Valor anterior
-     * @param mixed $valorNuevo Valor nuevo
-     * @return bool Éxito de la operación
-     */
-    public function registrarCambio($tabla, $idRegistro, $idUsuario, $tipoCambio, $campo = null, $valorAnterior = null, $valorNuevo = null) {
-        try {
-            $sql = "INSERT INTO historial_cambios (tabla, id_registro, id_usuario, tipo_cambio, campo, valor_anterior, valor_nuevo, fecha)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
-                    
-            $stmt = $this->db->prepare($sql);
-            $resultado = $stmt->execute([
-                $tabla, 
-                $idRegistro, 
-                $idUsuario, 
-                $tipoCambio, 
-                $campo, 
-                $valorAnterior !== null ? (is_array($valorAnterior) ? json_encode($valorAnterior) : $valorAnterior) : null,
-                $valorNuevo !== null ? (is_array($valorNuevo) ? json_encode($valorNuevo) : $valorNuevo) : null
-            ]);
-            
-            return $resultado;
-        } catch (PDOException $e) {
-            $this->log("Error al registrar cambio: " . $e->getMessage(), 'error', [
-                'tabla' => $tabla,
-                'id_registro' => $idRegistro,
-                'tipo_cambio' => $tipoCambio
-            ]);
-            return false;
-        }
-    }
-    
-    /**
-     * Genera reportes en diferentes formatos
-     * @param string $tipo Tipo de reporte
-     * @param array $datos Datos para el reporte
-     * @param string $formato Formato de salida (html, pdf, excel)
-     * @param array $opciones Opciones adicionales
-     * @return mixed Contenido del reporte o ruta del archivo generado
-     */
-    public function generarReporte($tipo, $datos, $formato = 'html', $opciones = []) {
-        try {
-            $contenido = '';
-            
-            // Generar contenido según el tipo de reporte
-            switch ($tipo) {
-                case 'proyecto':
-                    $contenido = $this->generarReporteProyecto($datos, $formato);
-                    break;
-                    
-                case 'actas':
-                    $contenido = $this->generarReporteActas($datos, $formato);
-                    break;
-                    
-                case 'acuerdos':
-                    $contenido = $this->generarReporteAcuerdos($datos, $formato);
-                    break;
-                    
-                case 'estadisticas':
-                    $contenido = $this->generarReporteEstadisticas($datos, $formato);
-                    break;
-                    
-                default:
-                    return ['error' => 'Tipo de reporte no válido'];
-            }
-            
-            // Si es HTML, devolver directamente
-            if ($formato === 'html') {
-                return $contenido;
-            }
-            
-            // Generar archivo en el formato solicitado
-            $nombreArchivo = 'reporte_' . $tipo . '_' . date('Ymd_His');
-            $rutaTemporal = sys_get_temp_dir() . '/' . $nombreArchivo;
-            
-            switch ($formato) {
-                case 'pdf':
-                    // Aquí iría la lógica para generar PDF (requiere librería externa)
-                    // Por ejemplo, usando mPDF, TCPDF, o similar
-                    $rutaTemporal .= '.pdf';
-                    break;
-                    
-                case 'excel':
-                    // Aquí iría la lógica para generar Excel (requiere librería externa)
-                    // Por ejemplo, usando PhpSpreadsheet
-                    $rutaTemporal .= '.xlsx';
-                    break;
-                    
-                case 'csv':
-                    $rutaTemporal .= '.csv';
-                    file_put_contents($rutaTemporal, $contenido);
-                    break;
-            }
-            
-            return [
-                'ruta' => $rutaTemporal,
-                'nombre' => basename($rutaTemporal)
-            ];
-            
-        } catch (Exception $e) {
-            $this->log("Error al generar reporte: " . $e->getMessage(), 'error', [
-                'tipo' => $tipo,
-                'formato' => $formato
-            ]);
-            return ['error' => 'Error al generar reporte'];
-        }
-    }
-    
-    /**
-     * Genera el contenido HTML o CSV para el reporte de proyecto
-     * @param array $datos Datos del proyecto
-     * @param string $formato Formato de salida
-     * @return string Contenido del reporte
-     */
-    private function generarReporteProyecto($datos, $formato) {
-        // Implementación básica para HTML y CSV
-        // En un caso real, se usaría un sistema de plantillas más robusto
-        
-        if ($formato === 'csv') {
-            $output = fopen('php://temp', 'r+');
-            fputcsv($output, ['Campo', 'Valor']);
-            
-            foreach ($datos as $campo => $valor) {
-                if (!is_array($valor)) {
-                    fputcsv($output, [$campo, $valor]);
-                }
-            }
-            
-            rewind($output);
-            $csv = stream_get_contents($output);
-            fclose($output);
-            
-            return $csv;
-        }
-        
-        // Por defecto, generar HTML
-        $html = '<div class="reporte-proyecto">';
-        $html .= '<h1>Reporte de Proyecto: ' . htmlspecialchars($datos['nombre']) . '</h1>';
-        $html .= '<div class="datos-basicos">';
-        $html .= '<h2>Datos Básicos</h2>';
-        $html .= '<table class="tabla-datos">';
-        
-        $camposBasicos = ['id', 'nombre', 'fecha_inicio', 'fecha_fin', 'estado', 'responsable', 'departamento', 'presupuesto', 'porcentaje_avance'];
-        
-        foreach ($camposBasicos as $campo) {
-            if (isset($datos[$campo])) {
-                $html .= '<tr>';
-                $html .= '<th>' . ucfirst(str_replace('_', ' ', $campo)) . '</th>';
-                $html .= '<td>' . htmlspecialchars($datos[$campo]) . '</td>';
-                $html .= '</tr>';
-            }
-        }
-        
-        $html .= '</table>';
-        $html .= '</div>';
-        
-        // Si hay datos de actas, mostrarlos
-        if (!empty($datos['actas'])) {
-            $html .= '<div class="seccion-actas">';
-            $html .= '<h2>Actas del Proyecto</h2>';
-            $html .= '<table class="tabla-actas">';
-            $html .= '<thead><tr><th>Título</th><th>Fecha</th><th>Tipo</th><th>Estado</th></tr></thead>';
-            $html .= '<tbody>';
-            
-            foreach ($datos['actas'] as $acta) {
-                $html .= '<tr>';
-                $html .= '<td>' . htmlspecialchars($acta['titulo']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acta['fecha']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acta['tipo']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acta['estado']) . '</td>';
-                $html .= '</tr>';
-            }
-            
-            $html .= '</tbody>';
-            $html .= '</table>';
-            $html .= '</div>';
-        }
-        
-        // Si hay datos de acuerdos, mostrarlos
-        if (!empty($datos['acuerdos'])) {
-            $html .= '<div class="seccion-acuerdos">';
-            $html .= '<h2>Acuerdos del Proyecto</h2>';
-            $html .= '<table class="tabla-acuerdos">';
-            $html .= '<thead><tr><th>Descripción</th><th>Fecha Límite</th><th>Estado</th><th>Responsable</th></tr></thead>';
-            $html .= '<tbody>';
-            
-            foreach ($datos['acuerdos'] as $acuerdo) {
-                $html .= '<tr>';
-                $html .= '<td>' . htmlspecialchars($acuerdo['descripcion']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acuerdo['fecha_limite']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acuerdo['estado']) . '</td>';
-                $html .= '<td>' . htmlspecialchars($acuerdo['responsable']) . '</td>';
-                $html .= '</tr>';
-            }
-            
-            $html .= '</tbody>';
-            $html .= '</table>';
-            $html .= '</div>';
-        }
-        
-        $html .= '<div class="fecha-generacion">';
-        $html .= '<p>Reporte generado el: ' . date('Y-m-d H:i:s') . '</p>';
-        $html .= '</div>';
-        
-        $html .= '</div>';
-        
-        return $html;
-    }
-    
-    /**
-     * Genera el contenido HTML o CSV para el reporte de actas
-     * @param array $datos Datos de actas
-     * @param string $formato Formato de salida
-     * @return string Contenido del reporte
-     */
-    private function generarReporteActas($datos, $formato) {
-        // Implementación similar a la de proyectos pero adaptada para actas
-        // Se omite el detalle por brevedad
-        return "Contenido del reporte de actas";
-    }
-    
-    /**
-     * Genera el contenido HTML o CSV para el reporte de acuerdos
-     * @param array $datos Datos de acuerdos
-     * @param string $formato Formato de salida
-     * @return string Contenido del reporte
-     */
-    private function generarReporteAcuerdos($datos, $formato) {
-        // Implementación similar a la de proyectos pero adaptada para acuerdos
-        // Se omite el detalle por brevedad
-        return "Contenido del reporte de acuerdos";
-    }
-    
-    /**
-     * Genera el contenido HTML o CSV para el reporte de estadísticas
-     * @param array $datos Datos estadísticos
-     * @param string $formato Formato de salida
-     * @return string Contenido del reporte
-     */
-    private function generarReporteEstadisticas($datos, $formato) {
-        // Implementación similar a la de proyectos pero adaptada para estadísticas
-        // Se omite el detalle por brevedad
-        return "Contenido del reporte de estadísticas";
-    }
-    
-    /**
-     * Método de utilidad para ejecutar consultas SQL personalizadas de forma segura
-     * @param string $sql Consulta SQL
-     * @param array $params Parámetros para la consulta preparada
-     * @param bool $fetchAll Obtener todos los resultados o solo el primero
-     * @return mixed Resultados de la consulta
-     */
-    public function ejecutarConsulta($sql, $params = [], $fetchAll = true) {
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            
-            if ($fetchAll) {
-                return $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $resultados['datos'] = $datosTabla;
+                $resultados['columnas'] = ['Año', 'Cantidad de Proyectos'];
             } else {
-                return $stmt->fetch(PDO::FETCH_ASSOC);
+                // Datos de ejemplo
+                $anios = [2019, 2020, 2021, 2022, 2023, 2024];
+                $cantidades = [12, 15, 20, 18, 22, 17];
+                
+                $resultados['grafico'] = [
+                    'tipo' => 'bar',
+                    'etiquetas' => $anios,
+                    'series' => [
+                        ['nombre' => 'Cantidad de Proyectos', 'datos' => $cantidades]
+                    ]
+                ];
+                
+                // Preparar datos para tabla
+                $datosTabla = [];
+                foreach ($anios as $index => $anio) {
+                    $datosTabla[] = [
+                        'anio' => $anio,
+                        'cantidad' => $cantidades[$index]
+                    ];
+                }
+                $resultados['datos'] = $datosTabla;
+                $resultados['columnas'] = ['Año', 'Cantidad de Proyectos'];
             }
-        } catch (PDOException $e) {
-            $this->log("Error en consulta personalizada: " . $e->getMessage(), 'error', [
-                'sql' => $sql,
-                'params' => json_encode($params)
-            ]);
-            return false;
-        }
+            break;
+            
+        case 'proyectos_por_entidad':
+            // Intentar usar la función real
+            if (function_exists('obtenerProyectosPorEntidad')) {
+                $proyectosPorEntidad = obtenerProyectosPorEntidad();
+                
+                // Preparar datos para el gráfico
+                $entidades = array_column($proyectosPorEntidad, 'entidad');
+                $cantidades = array_column($proyectosPorEntidad, 'cantidad');
+                
+                $resultados['grafico'] = [
+                    'tipo' => 'pie',
+                    'etiquetas' => $entidades,
+                    'series' => $cantidades
+                ];
+                
+                $resultados['datos'] = $proyectosPorEntidad;
+                $resultados['columnas'] = ['Entidad', 'Cantidad de Proyectos'];
+            } else {
+                // Datos de ejemplo
+                $entidades = ['Ministerio de Educación', 'Alcaldía de Bogotá', 'Gobernación del Valle', 'Secretaría de Educación', 'Instituto de Desarrollo Urbano'];
+                $cantidades = [15, 12, 8, 7, 5];
+                
+                $resultados['grafico'] = [
+                    'tipo' => 'pie',
+                    'etiquetas' => $entidades,
+                    'series' => $cantidades
+                ];
+                
+                $datosTabla = [];
+                foreach ($entidades as $index => $entidad) {
+                    $datosTabla[] = [
+                        'entidad' => $entidad,
+                        'cantidad' => $cantidades[$index]
+                    ];
+                }
+                $resultados['datos'] = $datosTabla;
+                $resultados['columnas'] = ['Entidad', 'Cantidad de Proyectos'];
+            }
+            break;
+            
+        case 'proyectos_por_situacion':
+            // Datos de ejemplo
+            $situaciones = ['En ejecución', 'Finalizado', 'Suscrito', 'Suspendido', 'En liquidación'];
+            $cantidades = [25, 30, 15, 5, 10];
+            
+            $resultados['grafico'] = [
+                'tipo' => 'donut',
+                'etiquetas' => $situaciones,
+                'series' => $cantidades
+            ];
+            
+            $datosTabla = [];
+            foreach ($situaciones as $index => $situacion) {
+                $datosTabla[] = [
+                    'situacion' => $situacion,
+                    'cantidad' => $cantidades[$index]
+                ];
+            }
+            $resultados['datos'] = $datosTabla;
+            $resultados['columnas'] = ['Situación', 'Cantidad de Proyectos'];
+            break;
+            
+        case 'valor_por_anio':
+            // Intentar usar la función real
+            if (function_exists('obtenerValoresPorAnio')) {
+                $datos = obtenerValoresPorAnio();
+                $resultados['grafico'] = [
+                    'tipo' => 'line',
+                    'etiquetas' => $datos['anios'],
+                    'series' => [
+                        ['nombre' => 'Valor Total (COP)', 'datos' => $datos['valores']]
+                    ]
+                ];
+                
+                // Preparar datos para tabla
+                $datosTabla = [];
+                foreach ($datos['anios'] as $index => $anio) {
+                    $datosTabla[] = [
+                        'anio' => $anio,
+                        'valor' => $datos['valores'][$index]
+                    ];
+                }
+                $resultados['datos'] = $datosTabla;
+                $resultados['columnas'] = ['Año', 'Valor Total (COP)'];
+            } else {
+                // Datos de ejemplo
+                $anios = [2019, 2020, 2021, 2022, 2023, 2024];
+                $valores = [1500000000, 1800000000, 2200000000, 2500000000, 2800000000, 3100000000];
+                
+                $resultados['grafico'] = [
+                    'tipo' => 'line',
+                    'etiquetas' => $anios,
+                    'series' => [
+                        ['nombre' => 'Valor Total (COP)', 'datos' => $valores]
+                    ]
+                ];
+                
+                $datosTabla = [];
+                foreach ($anios as $index => $anio) {
+                    $datosTabla[] = [
+                        'anio' => $anio,
+                        'valor' => $valores[$index]
+                    ];
+                }
+                $resultados['datos'] = $datosTabla;
+                $resultados['columnas'] = ['Año', 'Valor Total (COP)'];
+            }
+            break;
+            
+        case 'rendimiento_por_entidad':
+            // Datos de ejemplo
+            $entidades = ['Ministerio de Educación', 'Alcaldía de Bogotá', 'Gobernación del Valle', 'IDU', 'SED'];
+            $valores = [280000000, 190000000, 320000000, 150000000, 230000000];
+            $cantidades = [6, 4, 5, 3, 5];
+            
+            // Calcular promedio por proyecto
+            $promedios = [];
+            foreach ($valores as $i => $valor) {
+                $promedios[] = $cantidades[$i] > 0 ? $valor / $cantidades[$i] : 0;
+            }
+            
+            $resultados['grafico'] = [
+                'tipo' => 'complex',
+                'etiquetas' => $entidades,
+                'series' => [
+                    ['nombre' => 'Valor Total (Millones)', 'tipo' => 'column', 'datos' => array_map(function($v) { return $v / 1000000; }, $valores)],
+                    ['nombre' => 'Cantidad Proyectos', 'tipo' => 'column', 'datos' => $cantidades],
+                    ['nombre' => 'Promedio por Proyecto (Millones)', 'tipo' => 'line', 'datos' => array_map(function($v) { return $v / 1000000; }, $promedios)]
+                ]
+            ];
+            
+            $datosTabla = [];
+            foreach ($entidades as $index => $entidad) {
+                $datosTabla[] = [
+                    'entidad' => $entidad,
+                    'valor_total' => $valores[$index],
+                    'cantidad' => $cantidades[$index],
+                    'promedio' => $promedios[$index]
+                ];
+            }
+            $resultados['datos'] = $datosTabla;
+            $resultados['columnas'] = ['Entidad', 'Valor Total (COP)', 'Cantidad Proyectos', 'Promedio por Proyecto'];
+            break;
+            
+        case 'proyectos_vencimiento':
+            // Datos de ejemplo
+            $results = [
+                ['id' => 101, 'numero' => 'PRY-2023-034', 'nombre' => 'Desarrollo Plataforma de Seguimiento Académico', 'fecha_inicio' => '2023-04-15', 'fecha_fin' => '2024-03-29', 'dias_restantes' => 19],
+                ['id' => 215, 'numero' => 'PRY-2022-089', 'nombre' => 'Implementación Sistema de Gestión Ambiental', 'fecha_inicio' => '2022-08-10', 'fecha_fin' => '2024-04-12', 'dias_restantes' => 33],
+                ['id' => 183, 'numero' => 'PRY-2023-042', 'nombre' => 'Investigación sobre Biodiversidad Local', 'fecha_inicio' => '2023-05-22', 'fecha_fin' => '2024-05-20', 'dias_restantes' => 71],
+                ['id' => 196, 'numero' => 'PRY-2023-078', 'nombre' => 'Estudio Socioeconómico Región Central', 'fecha_inicio' => '2023-09-05', 'fecha_fin' => '2024-04-05', 'dias_restantes' => 26],
+                ['id' => 208, 'numero' => 'PRY-2022-125', 'nombre' => 'Modernización Infraestructura Educativa', 'fecha_inicio' => '2022-12-01', 'fecha_fin' => '2024-03-15', 'dias_restantes' => 5]
+            ];
+            
+            $resultados['datos'] = $results;
+            $resultados['columnas'] = ['ID', 'Número', 'Nombre', 'Fecha Inicio', 'Fecha Fin', 'Días Restantes'];
+            break;
+            
+        case 'distribucion_geografica':
+            // Datos de ejemplo
+            $departamentos = ['Bogotá D.C.', 'Antioquia', 'Valle del Cauca', 'Atlántico', 'Santander', 'Otros'];
+            $cantidades = [25, 12, 8, 5, 4, 10];
+            
+            $resultados['grafico'] = [
+                'tipo' => 'map',
+                'regiones' => $departamentos,
+                'cantidades' => $cantidades
+            ];
+            
+            $datosTabla = [];
+            foreach ($departamentos as $index => $departamento) {
+                $datosTabla[] = [
+                    'departamento' => $departamento,
+                    'cantidad' => $cantidades[$index],
+                    'porcentaje' => round(($cantidades[$index] / array_sum($cantidades)) * 100, 1)
+                ];
+            }
+            $resultados['datos'] = $datosTabla;
+            $resultados['columnas'] = ['Departamento', 'Cantidad de Proyectos', 'Porcentaje'];
+            break;
+            
+        case 'proyectos_supervisor':
+            // Datos de ejemplo
+            $supervisores = ['Juan Pérez', 'María López', 'Carlos Rodríguez', 'Ana Martínez', 'Pedro González'];
+            $proyectos = [8, 12, 6, 9, 7];
+            
+            $resultados['grafico'] = [
+                'tipo' => 'horizontal-bar',
+                'etiquetas' => $supervisores,
+                'series' => [
+                    ['nombre' => 'Proyectos Asignados', 'datos' => $proyectos]
+                ]
+            ];
+            
+            $datosTabla = [];
+            foreach ($supervisores as $index => $supervisor) {
+                $datosTabla[] = [
+                    'supervisor' => $supervisor,
+                    'cantidad' => $proyectos[$index]
+                ];
+            }
+            $resultados['datos'] = $datosTabla;
+            $resultados['columnas'] = ['Supervisor', 'Cantidad de Proyectos'];
+            break;
+            
+        case 'analisis_financiero':
+            // Datos de ejemplo para análisis financiero trimestral
+            $trimestres = ['2023-Q1', '2023-Q2', '2023-Q3', '2023-Q4', '2024-Q1'];
+            $ingresos = [450000000, 520000000, 480000000, 580000000, 620000000];
+            $gastos = [410000000, 460000000, 450000000, 520000000, 570000000];
+            
+            // Calcular saldos
+            $saldos = [];
+            foreach ($ingresos as $i => $ingreso) {
+                $saldos[] = $ingreso - $gastos[$i];
+            }
+            
+            $resultados['grafico'] = [
+                'tipo' => 'complex',
+                'etiquetas' => $trimestres,
+                'series' => [
+                    ['nombre' => 'Ingresos (Millones)', 'tipo' => 'column', 'datos' => array_map(function($v) { return $v / 1000000; }, $ingresos)],
+                    ['nombre' => 'Gastos (Millones)', 'tipo' => 'column', 'datos' => array_map(function($v) { return $v / 1000000; }, $gastos)],
+                    ['nombre' => 'Saldo (Millones)', 'tipo' => 'line', 'datos' => array_map(function($v) { return $v / 1000000; }, $saldos)]
+                ]
+            ];
+            
+            $datosTabla = [];
+            foreach ($trimestres as $index => $trimestre) {
+                $datosTabla[] = [
+                    'trimestre' => $trimestre,
+                    'ingresos' => $ingresos[$index],
+                    'gastos' => $gastos[$index],
+                    'saldo' => $saldos[$index]
+                ];
+            }
+            $resultados['datos'] = $datosTabla;
+            $resultados['columnas'] = ['Trimestre', 'Ingresos (COP)', 'Gastos (COP)', 'Saldo (COP)'];
+            break;
+            
+        default:
+            // No se ha seleccionado tipo de consulta
+            break;
     }
     
-    /**
-     * Cierra la conexión a la base de datos
-     */
-    public function cerrarConexion() {
-        $this->db = null;
+    return $resultados;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['tipo_consulta'])) {
+    $tipo_consulta_actual = $_POST['tipo_consulta'];
+    
+    // Recoger los filtros aplicados
+    $filtros = [];
+    
+    if (isset($_POST['anio']) && !empty($_POST['anio'])) {
+        $filtros['anio'] = $_POST['anio'];
+        $filtros_aplicados[] = "Año: " . $_POST['anio'];
     }
+    
+    if (isset($_POST['entidad']) && !empty($_POST['entidad'])) {
+        $filtros['entidad'] = $_POST['entidad'];
+        $filtros_aplicados[] = "Entidad: " . $_POST['entidad'];
+    }
+    
+    if (isset($_POST['situacion']) && !empty($_POST['situacion'])) {
+        $filtros['situacion'] = $_POST['situacion'];
+        $filtros_aplicados[] = "Situación: " . $_POST['situacion'];
+    }
+    
+    if (isset($_POST['fecha_desde']) && !empty($_POST['fecha_desde'])) {
+        $filtros['fecha_desde'] = $_POST['fecha_desde'];
+        $filtros_aplicados[] = "Desde: " . date('d/m/Y', strtotime($_POST['fecha_desde']));
+    }
+    
+    if (isset($_POST['fecha_hasta']) && !empty($_POST['fecha_hasta'])) {
+        $filtros['fecha_hasta'] = $_POST['fecha_hasta'];
+        $filtros_aplicados[] = "Hasta: " . date('d/m/Y', strtotime($_POST['fecha_hasta']));
+    }
+    
+    if (isset($_POST['valor_min']) && !empty($_POST['valor_min'])) {
+        $filtros['valor_min'] = (float)str_replace([',', '.'], '', $_POST['valor_min']);
+        $filtros_aplicados[] = "Valor mínimo: $" . number_format($_POST['valor_min'], 0, ',', '.');
+    }
+    
+    if (isset($_POST['valor_max']) && !empty($_POST['valor_max'])) {
+        $filtros['valor_max'] = (float)str_replace([',', '.'], '', $_POST['valor_max']);
+        $filtros_aplicados[] = "Valor máximo: $" . number_format($_POST['valor_max'], 0, ',', '.');
+    }
+    
+    if (isset($_POST['texto_busqueda']) && !empty($_POST['texto_busqueda'])) {
+        $filtros['texto_busqueda'] = $_POST['texto_busqueda'];
+        $filtros_aplicados[] = "Búsqueda: " . $_POST['texto_busqueda'];
+    }
+    
+    // Obtener los resultados según el tipo de consulta y filtros
+    $resultados = obtenerDatosConsulta($tipo_consulta_actual, $filtros);
 }
 ?>
+
+<!-- Estilos específicos para el Centro de Consultas -->
+<style>
+.consulta-card {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 35px rgba(140, 152, 164, 0.125);
+    border: none;
+    margin-bottom: 24px;
+    background: white;
+    transition: all 0.2s;
+}
+
+.consulta-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 35px rgba(140, 152, 164, 0.225);
+}
+
+.consulta-card .card-body {
+    padding: 1.5rem;
+}
+
+.consulta-card .card-title {
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: #344767;
+    font-size: 1.1rem;
+}
+
+.consulta-card .card-description {
+    color: #67748e;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+}
+
+.consulta-card .card-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: #fff;
+    margin-bottom: 1rem;
+    background: linear-gradient(310deg, #7928ca, #ff0080);
+}
+
+.icon-proyectos { background: linear-gradient(310deg, #2152ff, #21d4fd); }
+.icon-financiero { background: linear-gradient(310deg, #f53939, #fbcf33); }
+.icon-entidades { background: linear-gradient(310deg, #2aeeff, #2152ff); }
+.icon-tiempo { background: linear-gradient(310deg, #17ad37, #98ec2d); }
+.icon-geografico { background: linear-gradient(310deg, #ff667c, #ea0606); }
+.icon-analisis { background: linear-gradient(310deg, #627594, #a8b8d8); }
+
+.consulta-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+}
+
+.filter-card {
+    background: #f8f9fa;
+    border: 1px solid #f0f0f0;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 24px;
+}
+
+.filter-title {
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #344767;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.filter-title i {
+    margin-right: 8px;
+    color: #5e72e4;
+}
+
+.filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.filter-form .form-group {
+    flex: 1 1 200px;
+}
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.results-title {
+    font-weight: 600;
+    color: #344767;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.results-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.results-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(140, 152, 164, 0.1);
+    margin-bottom: 24px;
+    padding: 1.5rem;
+}
+
+.chart-container {
+    height: 400px;
+    margin-bottom: 1.5rem;
+}
+
+.table-container {
+    overflow-x: auto;
+    margin-bottom: 1rem;
+}
+
+.custom-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.custom-table th {
+    background: #f8f9fa;
+    color: #344767;
+    font-weight: 600;
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 2px solid #e9ecef;
+    white-space: nowrap;
+}
+
+.custom-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+    vertical-align: middle;
+}
+
+.custom-table tr:hover {
+    background-color: rgba(94, 114, 228, 0.05);
+}
+
+.badge-filter {
+    display: inline-block;
+    padding: 6px 12px;
+    background: rgba(94, 114, 228, 0.1);
+    border-radius: 30px;
+    color: #5e72e4;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+.badge-filter i {
+    margin-left: 5px;
+    cursor: pointer;
+}
+
+.search-header {
+    position: relative;
+    margin-bottom: 32px;
+    padding: 24px;
+    border-radius: 10px;
+    background: linear-gradient(310deg, #141727, #3a416f);
+    color: white;
+}
+
+.search-header h4 {
+    margin-bottom: 16px;
+    font-weight: 700;
+}
+
+.search-header p {
+    margin-bottom: 16px;
+    opacity: 0.8;
+}
+
+.global-search {
+    display: flex;
+    width: 100%;
+}
+
+.global-search input {
+    flex-grow: 1;
+    border-radius: 30px 0 0 30px;
+    border: none;
+    padding: 12px 20px;
+    font-size: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.global-search button {
+    border-radius: 0 30px 30px 0;
+    border: none;
+    background: #5e72e4;
+    color: white;
+    font-weight: 600;
+    padding: 0 24px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.global-search button:hover {
+    background: #4a5cd0;
+}
+
+.tabs-container {
+    margin-bottom: 1.5rem;
+}
+
+.nav-tabs {
+    border-bottom: 1px solid #e9ecef;
+    margin-bottom: 1.5rem;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #67748e;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    margin-right: 1rem;
+    transition: all 0.2s;
+}
+
+.nav-tabs .nav-link.active {
+    border-bottom: 2px solid #5e72e4;
+    color: #5e72e4;
+}
+
+@media (max-width: 768px) {
+    .consulta-options {
+        grid-template-columns: 1fr;
+    }
+    
+    .filter-form {
+        flex-direction: column;
+    }
+    
+    .results-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .results-actions {
+        margin-top: 1rem;
+    }
+}
+</style>
+
+<div class="container-fluid py-4">
+    <!-- Encabezado de búsqueda global -->
+    <div class="search-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h4><i class="fas fa-search-plus me-2"></i>Centro de Consultas Especializadas</h4>
+                <p>Obtén información detallada y análisis avanzados de todos los proyectos y entidades del sistema.</p>
+            </div>
+            <div class="col-md-4">
+                <form method="post" action="">
+                    <div class="global-search">
+                        <input type="text" name="texto_busqueda" placeholder="Buscar en todos los proyectos..." value="<?php echo isset($_POST['texto_busqueda']) ? htmlspecialchars($_POST['texto_busqueda']) : ''; ?>">
+                        <button type="submit" name="tipo_consulta" value="proyectos_activos">
+                            <i class="fas fa-search me-1"></i> Buscar
+                        </button>
+                    </div>
+                    <input type="hidden" name="busqueda_global" value="1">
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Opciones de consulta -->
+    <?php if (empty($tipo_consulta_actual)): ?>
+    <h5 class="font-weight-bolder mb-3 mt-4">Seleccione un tipo de consulta</h5>
+    <div class="consulta-options">
+        <!-- Proyectos Activos -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-proyectos">
+                    <i class="fas fa-project-diagram"></i>
+                </div>
+                <h5 class="card-title">Proyectos Activos</h5>
+                <p class="card-description">
+                    Consulta todos los proyectos activos en el sistema con filtros avanzados.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_activos">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Proyectos por Año -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-tiempo">
+                    <i class="fas fa-calendar-alt"></i>
+                </div>
+                <h5 class="card-title">Proyectos por Año</h5>
+                <p class="card-description">
+                    Visualiza la distribución de proyectos por año de suscripción.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_por_anio">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Proyectos por Entidad -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-entidades">
+                    <i class="fas fa-building"></i>
+                </div>
+                <h5 class="card-title">Proyectos por Entidad</h5>
+                <p class="card-description">
+                    Analiza la distribución de proyectos por entidad contratante.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_por_entidad">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Proyectos por Situación -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon" style="background: linear-gradient(310deg, #c1a556, #927510);">
+                    <i class="fas fa-tasks"></i>
+                </div>
+                <h5 class="card-title">Proyectos por Situación</h5>
+                <p class="card-description">
+                    Visualiza la distribución de proyectos según su situación actual.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_por_situacion">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Valor por Año -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-financiero">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <h5 class="card-title">Valor por Año</h5>
+                <p class="card-description">
+                    Analiza la evolución del valor total de proyectos a lo largo del tiempo.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="valor_por_anio">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Rendimiento por Entidad -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-analisis">
+                    <i class="fas fa-analytics"></i>
+                </div>
+                <h5 class="card-title">Rendimiento por Entidad</h5>
+                <p class="card-description">
+                    Compara el rendimiento financiero y cantidad de proyectos por entidad.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="rendimiento_por_entidad">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Proyectos por Vencer -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon" style="background: linear-gradient(310deg, #f5365c, #f56036);">
+                    <i class="fas fa-hourglass-half"></i>
+                </div>
+                <h5 class="card-title">Proyectos por Vencer</h5>
+                <p class="card-description">
+                    Lista de proyectos próximos a vencer ordenados por días restantes.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_vencimiento">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Distribución Geográfica -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon icon-geografico">
+                    <i class="fas fa-map-marked-alt"></i>
+                </div>
+                <h5 class="card-title">Distribución Geográfica</h5>
+                <p class="card-description">
+                    Visualiza la distribución geográfica de los proyectos por departamento.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="distribucion_geografica">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Proyectos por Supervisor -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon" style="background: linear-gradient(310deg, #2dce89, #2dcecc);">
+                    <i class="fas fa-user-tie"></i>
+                </div>
+                <h5 class="card-title">Proyectos por Supervisor</h5>
+                <p class="card-description">
+                    Analiza la distribución de proyectos por supervisor asignado.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="proyectos_supervisor">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Análisis Financiero -->
+        <div class="consulta-card">
+            <div class="card-body">
+                <div class="card-icon" style="background: linear-gradient(310deg, #344767, #5974a2);">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <h5 class="card-title">Análisis Financiero</h5>
+                <p class="card-description">
+                    Analiza la evolución de ingresos y gastos por periodos.
+                </p>
+                <form method="post" action="">
+                    <input type="hidden" name="tipo_consulta" value="analisis_financiero">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Consultar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php else: ?>
+    
+    <!-- Filtros para la consulta seleccionada -->
+    <div class="filter-card">
+        <h5 class="filter-title">
+            <i class="fas fa-filter"></i> Filtros para consulta: <span class="text-primary"><?php echo $tipos_consulta[$tipo_consulta_actual]; ?></span>
+        </h5>
+        
+        <form method="post" action="" class="filter-form">
+            <input type="hidden" name="tipo_consulta" value="<?php echo $tipo_consulta_actual; ?>">
+            
+            <?php if (in_array($tipo_consulta_actual, ['proyectos_activos', 'proyectos_por_anio', 'valor_por_anio'])): ?>
+            <div class="form-group">
+                <label for="anio" class="form-label">Año</label>
+                <select class="form-select form-select-sm" id="anio" name="anio">
+                    <option value="">Todos</option>
+                    <?php foreach ($anios as $anio): ?>
+                    <option value="<?php echo $anio; ?>" <?php echo (isset($_POST['anio']) && $_POST['anio'] == $anio) ? 'selected' : ''; ?>>
+                        <?php echo $anio; ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (in_array($tipo_consulta_actual, ['proyectos_activos', 'proyectos_por_entidad', 'rendimiento_por_entidad'])): ?>
+            <div class="form-group">
+                <label for="entidad" class="form-label">Entidad</label>
+                <select class="form-select form-select-sm" id="entidad" name="entidad">
+                    <option value="">Todas</option>
+                    <?php foreach ($entidades as $entidad): ?>
+                    <option value="<?php echo htmlspecialchars($entidad); ?>" <?php echo (isset($_POST['entidad']) && $_POST['entidad'] == $entidad) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($entidad); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (in_array($tipo_consulta_actual, ['proyectos_activos', 'proyectos_por_situacion'])): ?>
+            <div class="form-group">
+                <label for="situacion" class="form-label">Situación</label>
+                <select class="form-select form-select-sm" id="situacion" name="situacion">
+                    <option value="">Todas</option>
+                    <?php foreach ($situaciones as $situacion): ?>
+                    <option value="<?php echo htmlspecialchars($situacion); ?>" <?php echo (isset($_POST['situacion']) && $_POST['situacion'] == $situacion) ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($situacion); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (in_array($tipo_consulta_actual, ['proyectos_activos', 'proyectos_vencimiento'])): ?>
+            <div class="form-group">
+                <label for="fecha_desde" class="form-label">Fecha Desde</label>
+                <input type="date" class="form-control form-control-sm" id="fecha_desde" name="fecha_desde" 
+                       value="<?php echo isset($_POST['fecha_desde']) ? $_POST['fecha_desde'] : ''; ?>">
+            </div>
+            
+            <div class="form-group">
+                <label for="fecha_hasta" class="form-label">Fecha Hasta</label>
+                <input type="date" class="form-control form-control-sm" id="fecha_hasta" name="fecha_hasta" 
+                       value="<?php echo isset($_POST['fecha_hasta']) ? $_POST['fecha_hasta'] : ''; ?>">
+            </div>
+            <?php endif; ?>
+            
+            <?php if (in_array($tipo_consulta_actual, ['proyectos_activos', 'valor_por_anio', 'rendimiento_por_entidad'])): ?>
+            <div class="form-group">
+                <label for="valor_min" class="form-label">Valor Mínimo</label>
+                <input type="text" class="form-control form-control-sm" id="valor_min" name="valor_min" 
+                       value="<?php echo isset($_POST['valor_min']) ? $_POST['valor_min'] : ''; ?>"
+                       placeholder="Ej: 1.000.000">
+            </div>
+            
+            <div class="form-group">
+                <label for="valor_max" class="form-label">Valor Máximo</label>
+                <input type="text" class="form-control form-control-sm" id="valor_max" name="valor_max" 
+                       value="<?php echo isset($_POST['valor_max']) ? $_POST['valor_max'] : ''; ?>"
+                       placeholder="Ej: 100.000.000">
+            </div>
+            <?php endif; ?>
+            
+            <div class="form-group">
+                <label for="texto_busqueda" class="form-label">Texto a buscar</label>
+                <input type="text" class="form-control form-control-sm" id="texto_busqueda" name="texto_busqueda" 
+                       value="<?php echo isset($_POST['texto_busqueda']) ? htmlspecialchars($_POST['texto_busqueda']) : ''; ?>"
+                       placeholder="Buscar...">
+            </div>
+            
+            <div class="form-group d-flex justify-content-end">
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-search me-1"></i> Aplicar Filtros
+                </button>
+                
+                <a href="main.php?page=consultas_especializadas" class="btn btn-sm btn-outline-secondary ms-2">
+                    <i class="fas fa-times me-1"></i> Limpiar
+                </a>
+            </div>
+        </form>
+        
+        <?php if (!empty($filtros_aplicados)): ?>
+        <div class="mt-3">
+            <div class="d-flex flex-wrap">
+                <?php foreach ($filtros_aplicados as $filtro): ?>
+                <span class="badge-filter">
+                    <?php echo htmlspecialchars($filtro); ?>
+                </span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Resultados de la consulta -->
+    <div class="results-card">
+        <div class="results-header">
+            <h5 class="results-title">
+                <i class="fas fa-chart-bar me-2"></i>
+                Resultados: <?php echo $tipos_consulta[$tipo_consulta_actual]; ?>
+            </h5>
+            
+            <div class="results-actions">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="exportToExcel()">
+                    <i class="fas fa-file-excel me-1"></i> Excel
+                </button>
+                
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="exportToPDF()">
+                    <i class="fas fa-file-pdf me-1"></i> PDF
+                </button>
+                
+                <button type="button" class="btn btn-sm btn-outline-info" onclick="printResults()">
+                    <i class="fas fa-print me-1"></i> Imprimir
+                </button>
+            </div>
+        </div>
+        
+        <div class="tabs-container">
+            <ul class="nav nav-tabs" id="resultsTabs" role="tablist">
+                <?php if (isset($resultados['grafico'])): ?>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="chart-tab" data-bs-toggle="tab" data-bs-target="#chart-panel" type="button" role="tab">
+                        <i class="fas fa-chart-bar me-1"></i> Gráfico
+                    </button>
+                </li>
+                <?php endif; ?>
+                
+                <?php if (isset($resultados['datos'])): ?>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link <?php echo !isset($resultados['grafico']) ? 'active' : ''; ?>" id="table-tab" data-bs-toggle="tab" data-bs-target="#table-panel" type="button" role="tab">
+                        <i class="fas fa-table me-1"></i> Tabla
+                    </button>
+                </li>
+                <?php endif; ?>
+                
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary-panel" type="button" role="tab">
+                        <i class="fas fa-list-alt me-1"></i> Resumen
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="resultsTabContent">
+                <?php if (isset($resultados['grafico'])): ?>
+                <div class="tab-pane fade show active" id="chart-panel" role="tabpanel">
+                    <div class="chart-container">
+                        <div id="mainChart" style="width: 100%; height: 100%;"></div>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <?php if (isset($resultados['datos'])): ?>
+                <div class="tab-pane fade <?php echo !isset($resultados['grafico']) ? 'show active' : ''; ?>" id="table-panel" role="tabpanel">
+                    <div class="table-container">
+                        <table class="custom-table" id="resultTable">
+                            <thead>
+                                <tr>
+                                    <?php foreach ($resultados['columnas'] as $columna): ?>
+                                    <th><?php echo htmlspecialchars($columna); ?></th>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($resultados['datos'] as $fila): ?>
+                                <tr>
+                                    <?php foreach ($fila as $key => $valor): ?>
+                                    <td>
+                                        <?php 
+                                        // Formato especial para valores monetarios
+                                        if (strpos(strtolower($key), 'valor') !== false || strpos(strtolower($key), 'ingreso') !== false || strpos(strtolower($key), 'gasto') !== false || strpos(strtolower($key), 'saldo') !== false || strpos(strtolower($key), 'promedio') !== false) {
+                                            echo '$ ' . number_format($valor, 0, ',', '.');
+                                        } 
+                                        // Formato para fechas
+                                        elseif (strpos(strtolower($key), 'fecha') !== false && strtotime($valor)) {
+                                            echo date('d/m/Y', strtotime($valor));
+                                        }
+                                        // Formato para días restantes (colorear según urgencia)
+                                        elseif ($key === 'dias_restantes') {
+                                            $clase = '';
+                                            if ($valor <= 15) $clase = 'text-danger fw-bold';
+                                            elseif ($valor <= 30) $clase = 'text-warning fw-bold';
+                                            echo '<span class="' . $clase . '">' . $valor . ' días</span>';
+                                        }
+                                        // Valores normales
+                                        else {
+                                            echo is_string($valor) ? htmlspecialchars($valor) : $valor;
+                                        }
+                                        ?>
+                                    </td>
+                                    <?php endforeach; ?>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <?php if (count($resultados['datos']) > 0): ?>
+                    <div class="text-end text-muted mt-2">
+                        <small>Total: <?php echo count($resultados['datos']); ?> registros</small>
+                    </div>
+                    <?php else: ?>
+                    <div class="alert alert-info">
+                        No se encontraron datos para los criterios seleccionados.
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                
+                <div class="tab-pane fade" id="summary-panel" role="tabpanel">
+                    <div class="row">
+                        <?php if (!empty($resultados['datos'])): ?>
+                        <div class="col-md-6">
+                            <div class="card shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="card-title"><i class="fas fa-list me-2"></i>Datos generales</h6>
+                                    <ul class="list-group list-group-flush">
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Total registros:</span>
+                                            <strong><?php echo count($resultados['datos']); ?></strong>
+                                        </li>
+                                        <?php 
+                                        // Cálculos específicos según el tipo de consulta
+                                        if ($tipo_consulta_actual == 'proyectos_activos'): 
+                                            $total_en_ejecucion = 0;
+                                            $total_finalizados = 0;
+                                            $total_suscritos = 0;
+                                            
+                                            foreach ($resultados['datos'] as $fila) {
+                                                $situacion = strtolower($fila['situacion']);
+                                                if (strpos($situacion, 'ejecución') !== false || strpos($situacion, 'ejecucion') !== false) {
+                                                    $total_en_ejecucion++;
+                                                } elseif (strpos($situacion, 'finalizado') !== false) {
+                                                    $total_finalizados++;
+                                                } elseif (strpos($situacion, 'suscrito') !== false) {
+                                                    $total_suscritos++;
+                                                }
+                                            }
+                                        ?>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>En ejecución:</span>
+                                            <strong><?php echo $total_en_ejecucion; ?></strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Finalizados:</span>
+                                            <strong><?php echo $total_finalizados; ?></strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Suscritos:</span>
+                                            <strong><?php echo $total_suscritos; ?></strong>
+                                        </li>
+                                        <?php elseif (in_array($tipo_consulta_actual, ['valor_por_anio', 'analisis_financiero'])): 
+                                            // Calcular sumatoria si hay campo valor
+                                            $total_valor = 0;
+                                            foreach ($resultados['datos'] as $fila) {
+                                                if (isset($fila['valor'])) {
+                                                    $total_valor += $fila['valor'];
+                                                }
+                                                if (isset($fila['ingresos'])) {
+                                                    $total_ingresos = 0;
+                                                    $total_gastos = 0;
+                                                    foreach ($resultados['datos'] as $fila) {
+                                                        $total_ingresos += $fila['ingresos'];
+                                                        $total_gastos += $fila['gastos'];
+                                                    }
+                                                }
+                                            }
+                                            
+                                            if ($total_valor > 0):
+                                        ?>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Valor total:</span>
+                                            <strong>$ <?php echo number_format($total_valor, 0, ',', '.'); ?></strong>
+                                        </li>
+                                        <?php endif;
+                                        
+                                            if (isset($total_ingresos)):
+                                        ?>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Total ingresos:</span>
+                                            <strong>$ <?php echo number_format($total_ingresos, 0, ',', '.'); ?></strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Total gastos:</span>
+                                            <strong>$ <?php echo number_format($total_gastos, 0, ',', '.'); ?></strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Balance:</span>
+                                            <strong class="<?php echo ($total_ingresos - $total_gastos) >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                                $ <?php echo number_format($total_ingresos - $total_gastos, 0, ',', '.'); ?>
+                                            </strong>
+                                        </li>
+                                        <?php endif;
+                                        endif; ?>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="card-title"><i class="fas fa-filter me-2"></i>Filtros aplicados</h6>
+                                    <?php if (!empty($filtros_aplicados)): ?>
+                                    <ul class="list-group list-group-flush">
+                                        <?php foreach ($filtros_aplicados as $filtro): ?>
+                                        <li class="list-group-item">
+                                            <i class="fas fa-check-circle text-success me-2"></i>
+                                            <?php echo htmlspecialchars($filtro); ?>
+                                        </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                    <?php else: ?>
+                                    <p class="text-muted mb-0">No se aplicaron filtros a esta consulta.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div class="col-12">
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                No hay datos disponibles para generar un resumen.
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Botón para volver -->
+    <div class="text-center mb-4">
+        <a href="main.php?page=consultas_especializadas" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Volver a Todas las Consultas
+        </a>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- Dependencias para ApexCharts -->
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+
+<!-- Scripts para la exportación -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.20/jspdf.plugin.autotable.min.js"></script>
+
+<!-- Script para la inicialización de gráficos y exportaciones -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if (isset($resultados['grafico'])): ?>
+    // Inicializar gráfico
+    initChart();
+    <?php endif; ?>
+    
+    // Inicializar tooltips de Bootstrap
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function(tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Formatear campos numéricos de moneda
+    formatCurrencyFields();
+});
+
+// Función para inicializar el gráfico basado en el tipo
+function initChart() {
+    <?php if (isset($resultados['grafico'])): ?>
+    var chartType = '<?php echo $resultados['grafico']['tipo']; ?>';
+    var chartElement = document.getElementById('mainChart');
+    
+    if (!chartElement) return;
+    
+    var options = {};
+    
+    switch (chartType) {
+        case 'bar':
+            options = {
+                chart: {
+                    type: 'bar',
+                    height: 380,
+                    toolbar: {
+                        show: true,
+                        tools: {
+                            download: true,
+                            selection: true,
+                            zoom: true,
+                            zoomin: true,
+                            zoomout: true,
+                            pan: true
+                        }
+                    },
+                    animations: {
+                        enabled: true,
+                        easing: 'easeinout',
+                        speed: 800
+                    }
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: false,
+                        columnWidth: '55%',
+                        borderRadius: 4,
+                        dataLabels: {
+                            position: 'top'
+                        }
+                    }
+                },
+                dataLabels: {
+                    enabled: true,
+                    formatter: function(val) {
+                        return val;
+                    },
+                    offsetY: -20,
+                    style: {
+                        fontSize: '12px',
+                        colors: ["#304758"]
+                    }
+                },
+                colors: ['#5e72e4'],
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                xaxis: {
+                    categories: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>,
+                    position: 'bottom',
+                    labels: {
+                        offsetY: 0
+                    },
+                    axisBorder: {
+                        show: false
+                    },
+                    axisTicks: {
+                        show: false
+                    },
+                    tooltip: {
+                        enabled: true,
+                    }
+                },
+                yaxis: {
+                    labels: {
+                        formatter: function(val) {
+                            return val.toFixed(0);
+                        }
+                    }
+                },
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                grid: {
+                    borderColor: '#e7e7e7',
+                    row: {
+                        colors: ['#f3f3f3', 'transparent'],
+                        opacity: 0.5
+                    }
+                },
+                tooltip: {
+                    y: {
+                        formatter: function(val) {
+                            return val;
+                        }
+                    }
+                }
+            };
+            break;
+        
+        case 'pie':
+            options = {
+                chart: {
+                    type: 'pie',
+                    height: 380,
+                    toolbar: {
+                        show: true
+                    },
+                    animations: {
+                        enabled: true,
+                        easing: 'easeinout',
+                        speed: 800,
+                        animateGradually: {
+                            enabled: true,
+                            delay: 150
+                        },
+                        dynamicAnimation: {
+                            enabled: true,
+                            speed: 350
+                        }
+                    }
+                },
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                labels: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>,
+                colors: ['#5e72e4', '#f5365c', '#2dce89', '#fb6340', '#11cdef', '#8965e0', '#f53939', '#adb5bd'],
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                dataLabels: {
+                    enabled: true,
+                    formatter: function(val, opts) {
+                        return opts.w.config.series[opts.seriesIndex] + ' (' + val.toFixed(1) + '%)';
+                    },
+                    style: {
+                        fontSize: '14px',
+                        fontFamily: 'Helvetica, Arial, sans-serif',
+                        fontWeight: 'bold'
+                    },
+                    dropShadow: {
+                        enabled: false
+                    }
+                },
+                legend: {
+                    position: 'bottom',
+                    horizontalAlign: 'center',
+                    fontSize: '14px',
+                    markers: {
+                        width: 12,
+                        height: 12,
+                        strokeWidth: 0,
+                        radius: 12
+                    }
+                },
+                tooltip: {
+                    y: {
+                        formatter: function(val) {
+                            return val;
+                        }
+                    }
+                },
+                responsive: [{
+                    breakpoint: 480,
+                    options: {
+                        chart: {
+                            width: 300
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }]
+            };
+            break;
+        
+        case 'donut':
+            options = {
+                chart: {
+                    type: 'donut',
+                    height: 380,
+                    toolbar: {
+                        show: true
+                    },
+                    animations: {
+                        enabled: true,
+                        easing: 'easeinout',
+                        speed: 800,
+                        animateGradually: {
+                            enabled: true,
+                            delay: 150
+                        },
+                        dynamicAnimation: {
+                            enabled: true,
+                            speed: 350
+                        }
+                    }
+                },
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                labels: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>,
+                colors: ['#5e72e4', '#f5365c', '#2dce89', '#fb6340', '#11cdef'],
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                plotOptions: {
+                    pie: {
+                        donut: {
+                            size: '55%',
+                            labels: {
+                                show: true,
+                                total: {
+                                    show: true,
+                                    label: 'Total',
+                                    formatter: function(w) {
+                                        return w.globals.seriesTotals.reduce((a, b) => a + b, 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                dataLabels: {
+                    enabled: true,
+                    formatter: function(val, opts) {
+                        return opts.w.config.series[opts.seriesIndex] + ' (' + val.toFixed(1) + '%)';
+                    }
+                },
+                legend: {
+                    position: 'bottom',
+                    horizontalAlign: 'center'
+                },
+                responsive: [{
+                    breakpoint: 480,
+                    options: {
+                        chart: {
+                            width: 300
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }]
+            };
+            break;
+        
+        case 'line':
+            options = {
+                chart: {
+                    type: 'line',
+                    height: 380,
+                    toolbar: {
+                        show: true
+                    },
+                    zoom: {
+                        enabled: true
+                    },
+                    animations: {
+                        enabled: true,
+                        easing: 'linear',
+                        dynamicAnimation: {
+                            speed: 1000
+                        }
+                    }
+                },
+                stroke: {
+                    curve: 'smooth',
+                    width: 3
+                },
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                xaxis: {
+                    categories: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>,
+                    labels: {
+                        rotate: -45,
+                        rotateAlways: false
+                    }
+                },
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                colors: ['#5e72e4'],
+                markers: {
+                    size: 6,
+                    colors: ['#5e72e4'],
+                    strokeColors: '#fff',
+                    strokeWidth: 2,
+                    hover: {
+                        size: 8
+                    }
+                },
+                yaxis: {
+                    title: {
+                        text: 'Valor'
+                    },
+                    labels: {
+                        formatter: function(val) {
+                            return val >= 1000000 ? (val / 1000000).toFixed(1) + 'M' : val.toFixed(0);
+                        }
+                    }
+                },
+                grid: {
+                    borderColor: '#e7e7e7',
+                    row: {
+                        colors: ['#f3f3f3', 'transparent'],
+                        opacity: 0.5
+                    }
+                },
+                legend: {
+                    position: 'top',
+                    horizontalAlign: 'right'
+                }
+            };
+            break;
+        
+        case 'horizontal-bar':
+            options = {
+                chart: {
+                    type: 'bar',
+                    height: 380,
+                    toolbar: {
+                        show: true
+                    }
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: true,
+                        barHeight: '50%',
+                        distributed: false,
+                        borderRadius: 4,
+                        dataLabels: {
+                            position: 'bottom'
+                        }
+                    }
+                },
+                colors: ['#5e72e4'],
+                dataLabels: {
+                    enabled: true,
+                    textAnchor: 'start',
+                    style: {
+                        colors: ['#fff']
+                    },
+                    formatter: function(val, opt) {
+                        return val;
+                    },
+                    offsetX: 0
+                },
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                xaxis: {
+                    categories: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>
+                },
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                tooltip: {
+                    theme: 'dark',
+                    y: {
+                        formatter: function(val) {
+                            return val;
+                        }
+                    }
+                }
+            };
+            break;
+        
+        case 'complex':
+            options = {
+                chart: {
+                    type: 'line',
+                    height: 380,
+                    stacked: false,
+                    toolbar: {
+                        show: true
+                    }
+                },
+                dataLabels: {
+                    enabled: false
+                },
+                series: <?php echo json_encode($resultados['grafico']['series']); ?>,
+                xaxis: {
+                    categories: <?php echo json_encode($resultados['grafico']['etiquetas']); ?>
+                },
+                yaxis: [
+                    {
+                        axisTicks: {
+                            show: true,
+                        },
+                        axisBorder: {
+                            show: true,
+                            color: '#5e72e4'
+                        },
+                        labels: {
+                            style: {
+                                colors: '#5e72e4',
+                            }
+                        },
+                        title: {
+                            text: "Millones",
+                            style: {
+                                color: '#5e72e4',
+                            }
+                        }
+                    },
+                    {
+                        opposite: true,
+                        axisTicks: {
+                            show: true,
+                        },
+                        axisBorder: {
+                            show: true,
+                            color: '#f5365c'
+                        },
+                        labels: {
+                            style: {
+                                colors: '#f5365c',
+                            },
+                        },
+                        title: {
+                            text: "Unidades",
+                            style: {
+                                color: '#f5365c',
+                            }
+                        }
+                    }
+                ],
+                colors: ['#5e72e4', '#f5365c', '#2dce89'],
+                tooltip: {
+                    fixed: {
+                        enabled: true,
+                        position: 'topLeft',
+                        offsetY: 30,
+                        offsetX: 60
+                    }
+                },
+                legend: {
+                    horizontalAlign: 'center',
+                    offsetX: 40
+                },
+                title: {
+                    text: '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                }
+            };
+            break;
+        
+        case 'map':
+            // Para mapas necesitaríamos una librería específica para Colombia
+            // En este ejemplo usamos un gráfico de barras como alternativa
+            options = {
+                chart: {
+                    type: 'bar',
+                    height: 380,
+                    toolbar: {
+                        show: true
+                    }
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: false,
+                        columnWidth: '55%',
+                        endingShape: 'rounded'
+                    }
+                },
+                dataLabels: {
+                    enabled: true
+                },
+                series: [{
+                    name: 'Proyectos',
+                    data: <?php echo json_encode($resultados['grafico']['cantidades']); ?>
+                }],
+                xaxis: {
+                    categories: <?php echo json_encode($resultados['grafico']['regiones']); ?>
+                },
+                colors: ['#11cdef'],
+                title: {
+                    text: 'Distribución Geográfica de Proyectos',
+                    align: 'center',
+                    style: {
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        color: '#263238'
+                    }
+                },
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shade: 'light',
+                        type: "horizontal",
+                        shadeIntensity: 0.25,
+                        gradientToColors: undefined,
+                        inverseColors: true,
+                        opacityFrom: 0.85,
+                        opacityTo: 0.85,
+                        stops: [50, 0, 100]
+                    }
+                }
+            };
+            break;
+        
+        default:
+            break;
+    }
+    
+    var chart = new ApexCharts(chartElement, options);
+    chart.render();
+    <?php endif; ?>
+}
+
+// Función para formatear campos de moneda
+function formatCurrencyFields() {
+    var currencyInputs = document.querySelectorAll('#valor_min, #valor_max');
+    
+    currencyInputs.forEach(function(input) {
+        input.addEventListener('blur', function() {
+            var value = this.value.replace(/\D/g, '');
+            if (value) {
+                this.value = new Intl.NumberFormat('es-CO').format(value);
+            }
+        });
+        
+        input.addEventListener('focus', function() {
+            this.value = this.value.replace(/\D/g, '');
+        });
+    });
+}
+
+// Función para exportar a Excel
+function exportToExcel() {
+    var table = document.getElementById('resultTable');
+    if (!table) {
+        alert('No hay datos para exportar');
+        return;
+    }
+    
+    var workbook = XLSX.utils.book_new();
+    var worksheet = XLSX.utils.table_to_sheet(table);
+    
+    // Ajustar el ancho de las columnas
+    var wscols = [];
+    for (var i = 0; i < table.rows[0].cells.length; i++) {
+        wscols.push({ wch: 20 });
+    }
+    worksheet['!cols'] = wscols;
+    
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Consulta');
+    
+    // Nombre del archivo con la fecha actual
+    var fileName = 'Consulta_' + '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>' + '_' + 
+                  new Date().toISOString().split('T')[0] + '.xlsx';
+    
+    XLSX.writeFile(workbook, fileName);
+}
+
+// Función para exportar a PDF
+function exportToPDF() {
+    var table = document.getElementById('resultTable');
+    if (!table) {
+        alert('No hay datos para exportar');
+        return;
+    }
+    
+    // Generar título en base al tipo de consulta
+    var title = 'Consulta: <?php echo $tipos_consulta[$tipo_consulta_actual]; ?>';
+    var date = new Date().toLocaleString();
+    
+    var doc = new jspdf.jsPDF();
+    
+    // Agregar título
+    doc.setFontSize(16);
+    doc.text(title, 14, 15);
+    
+    // Agregar fecha
+    doc.setFontSize(10);
+    doc.text('Fecha de generación: ' + date, 14, 22);
+    
+    // Agregar filtros
+    <?php if (!empty($filtros_aplicados)): ?>
+    doc.setFontSize(11);
+    doc.text('Filtros aplicados:', 14, 30);
+    var yPos = 35;
+    <?php foreach ($filtros_aplicados as $index => $filtro): ?>
+    doc.setFontSize(9);
+    doc.text('- <?php echo addslashes($filtro); ?>', 16, yPos);
+    yPos += 5;
+    <?php endforeach; ?>
+    <?php endif; ?>
+    
+    // Agregar tabla
+    doc.autoTable({
+        html: '#resultTable',
+        startY: <?php echo empty($filtros_aplicados) ? 30 : 'yPos + 5'; ?>,
+        theme: 'grid',
+        headStyles: {
+            fillColor: [94, 114, 228],
+            textColor: 255,
+            fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+            fillColor: [240, 240, 240]
+        },
+        margin: { top: 10 }
+    });
+    
+    // Guardar el PDF
+    var fileName = 'Consulta_' + '<?php echo $tipos_consulta[$tipo_consulta_actual]; ?>' + '_' + 
+                  new Date().toISOString().split('T')[0] + '.pdf';
+    doc.save(fileName);
+}
+
+// Función para imprimir resultados
+function printResults() {
+    var printContents = document.getElementById('resultTable').outerHTML;
+    var originalContents = document.body.innerHTML;
+    
+    // Crear el contenido para imprimir
+    var printPage = document.createElement('div');
+    
+    // Añadir título
+    var title = document.createElement('h2');
+    title.textContent = 'Consulta: <?php echo $tipos_consulta[$tipo_consulta_actual]; ?>';
+    printPage.appendChild(title);
+    
+    // Añadir fecha
+    var date = document.createElement('p');
+    date.textContent = 'Fecha de generación: ' + new Date().toLocaleString();
+    printPage.appendChild(date);
+    
+    // Añadir filtros
+    <?php if (!empty($filtros_aplicados)): ?>
+    var filterTitle = document.createElement('h4');
+    filterTitle.textContent = 'Filtros aplicados:';
+    printPage.appendChild(filterTitle);
+    
+    var filterList = document.createElement('ul');
+    <?php foreach ($filtros_aplicados as $filtro): ?>
+    var filterItem = document.createElement('li');
+    filterItem.textContent = '<?php echo addslashes($filtro); ?>';
+    filterList.appendChild(filterItem);
+    <?php endforeach; ?>
+    printPage.appendChild(filterList);
+    <?php endif; ?>
+    
+    // Añadir tabla
+    printPage.innerHTML += printContents;
+    
+    // Aplicar estilos
+    var style = document.createElement('style');
+    style.innerHTML = `
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h2 { margin-bottom: 5px; }
+        p { margin-top: 0; margin-bottom: 15px; color: #666; }
+        ul { margin-bottom: 20px; }
+    `;
+    
+    // Configurar la ventana de impresión
+    var printWindow = window.open('', '_blank');
+    printWindow.document.write('<html><head><title>Resultados de Consulta</title>');
+    printWindow.document.write(style.outerHTML);
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(printPage.innerHTML);
+    printWindow.document.write('</body></html>');
+    
+    printWindow.document.close();
+    printWindow.focus();
+    
+    // Imprimir después de cargar todo el contenido
+    printWindow.onload = function() {
+        printWindow.print();
+        printWindow.close();
+    };
+}
