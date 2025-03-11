@@ -53,6 +53,9 @@ function formatearMoneda($valor) {
 // Obtener los datos de las entidades asociadas
 $entidadesProyecto = obtenerEntidadesProyecto($proyecto_id);
 
+// Obtener los contratistas asociados al proyecto
+$contratistas = obtenerContratistasProyecto($proyecto_id);
+
 // Obtener las actas del proyecto
 $actas = obtenerActasProyecto($proyecto_id);
 
@@ -967,6 +970,12 @@ body {
             <span class="notification-badge"><?php echo count($actas); ?></span>
             <?php endif; ?>
         </div>
+        <div class="custom-tab" data-tab="contratistas">
+            <i class="fas fa-users"></i> Contratistas
+            <?php if(!empty($contratistas)): ?>
+            <span class="notification-badge"><?php echo count($contratistas); ?></span>
+            <?php endif; ?>
+        </div>
         <div class="custom-tab" data-tab="actividad">
             <i class="fas fa-history"></i> Actividad Reciente
         </div>
@@ -1456,6 +1465,121 @@ body {
         </div>
     </div>
     
+
+
+
+<!-- Pestaña de Contratistas -->
+<div class="tab-content" id="tab-contratistas">
+    <div class="row">
+        <div class="col-12">
+            <!-- Tabla de contratistas -->
+            <div class="custom-card mb-4">
+                <div class="custom-card-header d-flex justify-content-between align-items-center">
+                    <h6 class="custom-card-title">Contratistas Asociados al Proyecto</h6>
+                    <a href="main.php?page=agregar_contratista&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-success">
+                        <i class="fas fa-plus"></i> Nuevo Contratista
+                    </a>
+                </div>
+                <div class="custom-card-body">
+                    <?php if(empty($contratistas)): ?>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="empty-state-title">Sin contratistas asociados</div>
+                        <div class="empty-state-desc">No hay contratistas asociados a este proyecto. Puede agregar un contratista con el botón superior.</div>
+                    </div>
+                    <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Identificación</th>
+                                    <th>Nombre</th>
+                                    <th>Tipo</th>
+                                    <th>Tipo Contrato</th>
+                                    <th>Valor</th>
+                                    <th>Fechas</th>
+                                    <th width="130" class="text-center">Contacto</th>
+                                    <th width="130" class="text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach($contratistas as $contratista): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($contratista['identificacion']); ?></td>
+                                    <td>
+                                        <div style="font-weight: 500;">
+                                            <?php echo htmlspecialchars($contratista['nombre_completo']); ?>
+                                        </div>
+                                        <?php if(!empty($contratista['rol_contratista'])): ?>
+                                        <div style="font-size: 0.8rem; color: var(--neutral-600); margin-top: 3px;">
+                                            <?php echo htmlspecialchars(substr($contratista['rol_contratista'], 0, 50) . (strlen($contratista['rol_contratista']) > 50 ? '...' : '')); ?>
+                                        </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        echo htmlspecialchars($contratista['tipo_persona_desc'] ?: 
+                                            ($contratista['tipo_persona'] == 1 ? 'Natural' : 
+                                             ($contratista['tipo_persona'] == 2 ? 'Jurídica' : 'Otro'))); 
+                                        ?>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($contratista['tipo_contrato_desc'] ?: '-'); ?></td>
+                                    <td>
+                                        <?php if(!empty($contratista['valor'])): ?>
+                                            <?php echo formatearMoneda($contratista['valor']); ?>
+                                        <?php else: ?>
+                                            -
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div style="font-size: 0.8rem;">
+                                            <div><strong>Inicio:</strong> <?php echo formatearFecha($contratista['fecha_inicio']); ?></div>
+                                            <div><strong>Fin:</strong> <?php echo formatearFecha($contratista['fecha_fin']); ?></div>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="btn-group">
+                                            <?php if(!empty($contratista['correo'])): ?>
+                                            <a href="mailto:<?php echo htmlspecialchars($contratista['correo']); ?>" class="action-button btn-info" title="Enviar correo">
+                                                <i class="fas fa-envelope"></i>
+                                            </a>
+                                            <?php endif; ?>
+                                            <?php if(!empty($contratista['tel_celular'])): ?>
+                                            <a href="tel:<?php echo htmlspecialchars($contratista['tel_celular']); ?>" class="action-button btn-secondary" title="Llamar">
+                                                <i class="fas fa-phone"></i>
+                                            </a>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="btn-group">
+                                            <a href="main.php?page=ver_contratista&id=<?php echo $contratista['identificacion']; ?>" class="action-button btn-info" title="Ver contratista">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="main.php?page=editar_contratista&id=<?php echo $contratista['identificacion']; ?>&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-warning" title="Editar contratista">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+
     <!-- Pestaña de Actividad Reciente -->
     <div class="tab-content" id="tab-actividad">
         <div class="row">
