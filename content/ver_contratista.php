@@ -1,12 +1,6 @@
 <?php
-/**
- * Página para visualizar los detalles de un contratista
- * Esta página muestra información completa de un contratista y sus contratos asociados
- */
-
 // Verificar que se haya proporcionado un ID
 if (!isset($_GET['id']) || empty($_GET['id'])) {
-    // Redirigir a la lista de proyectos si no se proporciona un ID válido
     header('Location: main.php?page=proyecto');
     exit;
 }
@@ -14,19 +8,14 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 $contratista_id = $_GET['id'];
 $proyecto_id = isset($_GET['proyecto_id']) ? intval($_GET['proyecto_id']) : null;
 
-// Incluir el modelo de proyecto si aún no está incluido
-if (!function_exists('obtenerDetalleContratista')) {
-    if (file_exists('models/contratista_model.php')) {
-        include_once 'models/contratista_model.php';
-    } else if (file_exists('models/proyecto_model.php')) {
-        include_once 'models/proyecto_model.php';
-    } else {
-        echo '<div class="alert alert-danger">Error: No se pueden encontrar los modelos necesarios.</div>';
-        exit;
-    }
+// Incluir los modelos necesarios
+if (file_exists('models/contratista_model.php')) {
+    include_once 'models/contratista_model.php';
+} else if (file_exists('models/proyecto_model.php')) {
+    include_once 'models/proyecto_model.php';
 }
 
-// Verificar si la función existe o crear una versión temporal
+// Definir las funciones necesarias si no existen
 if (!function_exists('obtenerDetalleContratista')) {
     function obtenerDetalleContratista($contratista_id) {
         try {
@@ -123,175 +112,75 @@ if (!function_exists('obtenerDetalleContratista')) {
     }
 }
 
-if (!function_exists('obtenerActasContratista')) {
-    function obtenerActasContratista($contratista_id, $proyecto_id = null) {
+if (!function_exists('obtenerContratosContratista')) {
+    function obtenerContratosContratista($contratista_id) {
         try {
             $conn = conectarOracle();
-            if ($proyecto_id === null) {
-                $sql = "SELECT 
-                            a.ANIO_PRO,
-                            a.NUMERO_PRO,
-                            a.NUMERO_ACTA,
-                            a.TIPO_ACTA,
-                            t.DESCRIPCION as TIPO_DESCRIPCION,
-                            a.FECHA_ACTA,
-                            a.OBSERVA,
-                            a.ESTADO,
-                            p.NOMBRE as NOMBRE_PROYECTO
-                        FROM 
-                            ACTA_PROYECTO a
-                        JOIN
-                            PROYECTO p ON a.NUMERO_PRO = p.NUMERO_PRO AND a.ANIO_PRO = p.ANIO_PRO
-                        LEFT JOIN 
-                            TIPO_ACTA t ON a.TIPO_ACTA = t.CODIGO
-                        WHERE 
-                            EXISTS (
-                                SELECT 1 FROM PROYECTO_OPS po 
-                                WHERE po.NUMERO_PRO = a.NUMERO_PRO 
-                                AND po.IDENTIFICACION = :id
-                            )
-                        AND a.ESTADO = 'A'
-                        ORDER BY 
-                            a.FECHA_ACTA DESC";
-                
-                $stid = oci_parse($conn, $sql);
-                oci_bind_by_name($stid, ':id', $contratista_id);
-            } else {
-                $sql = "SELECT 
-                            a.ANIO_PRO,
-                            a.NUMERO_PRO,
-                            a.NUMERO_ACTA,
-                            a.TIPO_ACTA,
-                            t.DESCRIPCION as TIPO_DESCRIPCION,
-                            a.FECHA_ACTA,
-                            a.OBSERVA,
-                            a.ESTADO,
-                            p.NOMBRE as NOMBRE_PROYECTO
-                        FROM 
-                            ACTA_PROYECTO a
-                        JOIN
-                            PROYECTO p ON a.NUMERO_PRO = p.NUMERO_PRO AND a.ANIO_PRO = p.ANIO_PRO
-                        LEFT JOIN 
-                            TIPO_ACTA t ON a.TIPO_ACTA = t.CODIGO
-                        WHERE 
-                            a.NUMERO_PRO = :proyecto_id
-                            AND EXISTS (
-                                SELECT 1 FROM PROYECTO_OPS po 
-                                WHERE po.NUMERO_PRO = a.NUMERO_PRO 
-                                AND po.IDENTIFICACION = :id
-                            )
-                        AND a.ESTADO = 'A'
-                        ORDER BY 
-                            a.FECHA_ACTA DESC";
-                
-                $stid = oci_parse($conn, $sql);
-                oci_bind_by_name($stid, ':id', $contratista_id);
-                oci_bind_by_name($stid, ':proyecto_id', $proyecto_id);
-            }
+            $sql = "SELECT 
+                        po.ANIO_PRO,
+                        po.NUMERO_PRO,
+                        po.IDENTIFICACION,
+                        po.FECHA_INICIO,
+                        po.FECHA_TERMINACION as FECHA_FIN,
+                        po.VALOR,
+                        po.OBJETO as ROL_CONTRATISTA,
+                        po.ESTADO,
+                        p.NOMBRE as NOMBRE_PROYECTO,
+                        tc.DESCRIPCION as TIPO_CONTRATO_DESC,
+                        e.DESCRIPCION as ENTIDAD_DESC
+                    FROM 
+                        PROYECTO_OPS po
+                    JOIN
+                        PROYECTO p ON po.NUMERO_PRO = p.NUMERO_PRO
+                    LEFT JOIN
+                        TIPO_CONTRATO tc ON po.TIPO_CONTRATO = tc.CODIGO
+                    LEFT JOIN
+                        (SELECT es.NUMERO_PRO, e.DESCRIPCION 
+                         FROM ENTIDAD e
+                         JOIN ENTE_SUSCRIPTOR es ON e.CODIGO = es.ENTIDAD
+                         WHERE ROWNUM = 1) e ON e.NUMERO_PRO = po.NUMERO_PRO
+                    WHERE 
+                        po.IDENTIFICACION = :id
+                    ORDER BY 
+                        po.FECHA_INICIO DESC";
             
+            $stid = oci_parse($conn, $sql);
             if (!$stid) {
                 $e = oci_error($conn);
-                error_log("Error al preparar consulta de actas de contratista: " . $e['message']);
+                error_log("Error al preparar consulta de contratos: " . $e['message']);
                 return [];
             }
+            
+            oci_bind_by_name($stid, ':id', $contratista_id);
             
             $r = oci_execute($stid);
             if (!$r) {
                 $e = oci_error($stid);
-                error_log("Error al ejecutar consulta de actas de contratista: " . $e['message']);
+                error_log("Error al ejecutar consulta de contratos: " . $e['message']);
                 oci_free_statement($stid);
                 oci_close($conn);
                 return [];
             }
             
-            $actas = [];
+            $contratos = [];
             while ($row = oci_fetch_assoc($stid)) {
-                $acta = array();
+                $contrato = array();
                 foreach ($row as $key => $value) {
-                    $acta[strtolower($key)] = $value;
+                    $contrato[strtolower($key)] = $value;
                 }
-                $actas[] = $acta;
+                $contrato['entidad'] = $contrato['entidad_desc'] ?? 'Entidad Contratante';
+                $contratos[] = $contrato;
             }
             
             oci_free_statement($stid);
             oci_close($conn);
             
-            return $actas;
+            return $contratos;
             
         } catch (Exception $e) {
-            error_log("Error en obtenerActasContratista: " . $e->getMessage());
+            error_log("Error en obtenerContratosContratista: " . $e->getMessage());
             return [];
         }
-    }
-}
-
-function obtenerContratosContratista($contratista_id) {
-    try {
-        $conn = conectarOracle();
-        $sql = "SELECT 
-                    po.ANIO_PRO,
-                    po.NUMERO_PRO,
-                    po.IDENTIFICACION,
-                    po.FECHA_INICIO,
-                    po.FECHA_TERMINACION as FECHA_FIN,
-                    po.VALOR,
-                    po.OBJETO as ROL_CONTRATISTA,
-                    po.ESTADO,
-                    p.NOMBRE as NOMBRE_PROYECTO,
-                    tc.DESCRIPCION as TIPO_CONTRATO_DESC,
-                    e.DESCRIPCION as ENTIDAD_DESC
-                FROM 
-                    PROYECTO_OPS po
-                JOIN
-                    PROYECTO p ON po.NUMERO_PRO = p.NUMERO_PRO
-                LEFT JOIN
-                    TIPO_CONTRATO tc ON po.TIPO_CONTRATO = tc.CODIGO
-                LEFT JOIN
-                    (SELECT es.NUMERO_PRO, e.DESCRIPCION 
-                     FROM ENTIDAD e
-                     JOIN ENTE_SUSCRIPTOR es ON e.CODIGO = es.ENTIDAD
-                     WHERE ROWNUM = 1) e ON e.NUMERO_PRO = po.NUMERO_PRO
-                WHERE 
-                    po.IDENTIFICACION = :id
-                ORDER BY 
-                    po.FECHA_INICIO DESC";
-        
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta de contratos: " . $e['message']);
-            return [];
-        }
-        
-        oci_bind_by_name($stid, ':id', $contratista_id);
-        
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de contratos: " . $e['message']);
-            oci_free_statement($stid);
-            oci_close($conn);
-            return [];
-        }
-        
-        $contratos = [];
-        while ($row = oci_fetch_assoc($stid)) {
-            $contrato = array();
-            foreach ($row as $key => $value) {
-                $contrato[strtolower($key)] = $value;
-            }
-            $contrato['entidad'] = $contrato['entidad_desc'] ?? 'Entidad Contratante';
-            $contratos[] = $contrato;
-        }
-        
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $contratos;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerContratosContratista: " . $e->getMessage());
-        return [];
     }
 }
 
@@ -307,7 +196,7 @@ if (!$contratista) {
 // Obtener contratos del contratista
 $contratos = obtenerContratosContratista($contratista_id);
 
-// Función para formatear fechas
+// Funciones auxiliares
 function formatearFecha($fecha) {
     if (!$fecha) return "-";
     
@@ -319,7 +208,6 @@ function formatearFecha($fecha) {
     }
 }
 
-// Función para formatear valores monetarios
 function formatearMoneda($valor) {
     if (!$valor) return "$0.00";
     
@@ -351,33 +239,6 @@ function formatearMoneda($valor) {
     
     --card-border-radius: 12px;
     --button-border-radius: 8px;
-    --input-border-radius: 8px;
-}
-
-.card {
-    border-radius: var(--card-border-radius);
-    border: none;
-    box-shadow: var(--shadow-sm);
-    transition: var(--transition);
-    overflow: hidden;
-    margin-bottom: 24px;
-}
-
-.card:hover {
-    box-shadow: var(--shadow-md);
-}
-
-.card-header {
-    background-color: var(--white);
-    border-bottom: 1px solid var(--light);
-    padding: 18px 20px;
-}
-
-.card-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--dark);
-    margin-bottom: 0;
 }
 
 .profile-header {
@@ -497,6 +358,32 @@ function formatearMoneda($valor) {
     font-weight: 500;
 }
 
+.card {
+    border-radius: var(--card-border-radius);
+    border: none;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition);
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.card-header {
+    background-color: var(--white);
+    border-bottom: 1px solid var(--light);
+    padding: 18px 20px;
+}
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 0;
+}
+
 .nav-tabs {
     border-bottom: 1px solid var(--light);
     padding: 0 16px;
@@ -537,9 +424,7 @@ function formatearMoneda($valor) {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
+    margin-bottom: 1.5rem;
 }
 
 .custom-table th {
@@ -569,55 +454,6 @@ function formatearMoneda($valor) {
     background-color: rgba(94, 114, 228, 0.03);
 }
 
-.btn-action {
-    padding: 6px 12px;
-    font-size: 0.75rem;
-    border-radius: 6px;
-    font-weight: 600;
-    transition: var(--transition);
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.btn-action:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-sm);
-}
-
-.btn-primary {
-    background-color: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-dark);
-    border-color: var(--primary-dark);
-}
-
-.btn-info {
-    background-color: var(--info);
-    border-color: var(--info);
-    color: white;
-}
-
-.btn-info:hover {
-    background-color: #0fb8de;
-    border-color: #0fb8de;
-}
-
-.btn-secondary {
-    background-color: var(--white);
-    border-color: var(--light);
-    color: var(--dark);
-}
-
-.btn-secondary:hover {
-    background-color: var(--light);
-    border-color: var(--secondary);
-}
-
 .status-badge {
     display: inline-flex;
     align-items: center;
@@ -638,18 +474,20 @@ function formatearMoneda($valor) {
     color: var(--danger);
 }
 
-.status-F {
-    background-color: rgba(136, 152, 170, 0.1);
-    color: var(--secondary);
+.btn-action {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in {
-    animation: fadeIn 0.3s ease forwards;
+.btn-action:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
 }
 
 .back-button {
@@ -675,55 +513,61 @@ function formatearMoneda($valor) {
     margin-right: 0.5rem;
 }
 
-@media (max-width: 768px) {
-    .profile-header {
-        padding: 20px;
-    }
-    
-    .profile-image {
-        width: 60px;
-        height: 60px;
-        font-size: 1.5rem;
-    }
-    
-    .profile-details h4 {
-        font-size: 1.3rem;
-    }
-    
-    .info-row {
-        flex-direction: column;
-    }
-    
-    .info-label, .info-value {
-        width: 100%;
-    }
-    
-    .info-label {
-        margin-bottom: 4px;
-    }
-    
-    .nav-tabs .nav-link {
-        padding: 10px 12px;
-        font-size: 0.85rem;
-    }
-    
-    .nav-tabs .nav-link i {
-        margin-right: 5px;
-    }
+.project-link-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background-color: var(--primary-light);
+    color: white;
+    border-radius: var(--button-border-radius);
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+    margin-bottom: 1rem;
+    text-decoration: none;
+    margin-left: 0.5rem;
+}
+
+.project-link-button:hover {
+    background-color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.project-link-button i {
+    margin-right: 0.5rem;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease forwards;
 }
 </style>
 
 <div class="container-fluid py-4">
-    <?php if ($proyecto_id): ?>
-    <a href="main.php?page=proyecto_individual&id=<?php echo $proyecto_id; ?>" class="back-button">
-        <i class="fas fa-arrow-left"></i> Volver al Proyecto
-    </a>
-    <?php else: ?>
-    <a href="main.php?page=proyecto" class="back-button">
-        <i class="fas fa-arrow-left"></i> Volver a Proyectos
-    </a>
-    <?php endif; ?>
+    <!-- Botones de navegación mejorados -->
+    <div class="mb-3">
+        <?php if ($proyecto_id): ?>
+        <a href="main.php?page=proyecto_individual&id=<?php echo $proyecto_id; ?>" class="back-button">
+            <i class="fas fa-arrow-left"></i> Volver al Proyecto
+        </a>
+        <?php else: ?>
+        <a href="main.php?page=proyecto" class="back-button">
+            <i class="fas fa-arrow-left"></i> Volver a Proyectos
+        </a>
+        
+        <?php if (!empty($contratos)): ?>
+        <a href="main.php?page=proyecto_individual&id=<?php echo $contratos[0]['numero_pro']; ?>" class="project-link-button">
+            <i class="fas fa-project-diagram"></i> Ver Proyecto Asociado
+        </a>
+        <?php endif; ?>
+        <?php endif; ?>
+    </div>
     
+    <!-- Encabezado del Contratista -->
     <div class="profile-header animate-fade-in">
         <div class="header-content">
             <div class="profile-image">
@@ -794,17 +638,10 @@ function formatearMoneda($valor) {
                                 <span class="badge bg-primary rounded-pill"><?php echo count($contratos); ?></span>
                             </button>
                         </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="actas-tab" data-bs-toggle="tab" data-bs-target="#actas" type="button" role="tab" aria-controls="actas" aria-selected="false">
-                                <i class="fas fa-file-signature"></i> Actas
-                                <?php if(!empty($actas_contratista)): ?>
-                                <span class="badge bg-primary rounded-pill"><?php echo count($actas_contratista); ?></span>
-                                <?php endif; ?>
-                            </button>
-                        </li>
                     </ul>
                     
                     <div class="tab-content" id="contratoTabContent">
+                        <!-- Tab de Información Personal -->
                         <div class="tab-pane fade show active" id="info" role="tabpanel" aria-labelledby="info-tab">
                             <div class="row">
                                 <div class="col-lg-6">
@@ -899,6 +736,7 @@ function formatearMoneda($valor) {
                             </div>
                         </div>
                         
+                        <!-- Tab de Contacto -->
                         <div class="tab-pane fade" id="contacto" role="tabpanel" aria-labelledby="contacto-tab">
                             <div class="row">
                                 <div class="col-lg-6">
@@ -907,184 +745,181 @@ function formatearMoneda($valor) {
                                         <div class="info-row">
                                             <div class="info-label">Dirección</div>
                                             <div class="info-value"><?php echo htmlspecialchars($contratista['direccion'] ?: '-'); ?></div>
-                                        </div>
-                                        <div class="info-row">
-                                            <div class="info-label">Teléfono Fijo</div>
-                                            <div class="info-value">
-                                                <?php if (!empty($contratista['tel_fijo'])): ?>
-                                                <a href="tel:<?php echo htmlspecialchars($contratista['tel_fijo']); ?>" class="text-primary">
-                                                    <i class="fas fa-phone-alt me-1"></i> <?php echo htmlspecialchars($contratista['tel_fijo']); ?>
-                                                </a>
-                                                <?php else: ?>
-                                                -
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                        <div class="info-row">
-                                            <div class="info-label">Teléfono Celular</div>
-                                            <div class="info-value">
-                                                <?php if (!empty($contratista['tel_celular'])): ?>
-                                                <a href="tel:<?php echo htmlspecialchars($contratista['tel_celular']); ?>" class="text-primary">
-                                                    <i class="fas fa-mobile-alt me-1"></i> <?php echo htmlspecialchars($contratista['tel_celular']); ?>
-                                                </a>
-                                                <?php else: ?>
-                                                -
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                        <div class="info-row">
-                                            <div class="info-label">Correo Electrónico</div>
-                                            <div class="info-value">
-                                                <?php if (!empty($contratista['correo'])): ?>
-                                                <a href="mailto:<?php echo htmlspecialchars($contratista['correo']); ?>" class="text-primary">
-                                                    <i class="fas fa-envelope me-1"></i> <?php echo htmlspecialchars($contratista['correo']); ?>
-                                                </a>
-                                                <?php else: ?>
-                                                -
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="col-lg-6">
-                                    <div class="info-section">
-                                        <h5 class="info-section-title">Acciones Rápidas</h5>
-                                        <div class="d-flex flex-column gap-2">
-                                            <?php if (!empty($contratista['tel_celular'])): ?>
-                                            <a href="tel:<?php echo htmlspecialchars($contratista['tel_celular']); ?>" class="btn btn-info btn-action">
-                                                <i class="fas fa-phone-alt"></i> Llamar al Celular
-                                            </a>
-                                            <?php endif; ?>
-                                            
-                                            <?php if (!empty($contratista['correo'])): ?>
-                                            <a href="mailto:<?php echo htmlspecialchars($contratista['correo']); ?>" class="btn btn-primary btn-action">
-                                                <i class="fas fa-envelope"></i> Enviar Correo
-                                            </a>
-                                            <?php endif; ?>
-                                            
-                                            <a href="main.php?page=editar_contratista&id=<?php echo $contratista_id; ?><?php echo $proyecto_id ? '&proyecto_id='.$proyecto_id : ''; ?>" class="btn btn-secondary btn-action">
-                                                <i class="fas fa-edit"></i> Editar Información
-                                            </a>
-                                            
-                                            <?php if ($proyecto_id): ?>
-                                            <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>&contratista_id=<?php echo $contratista_id; ?>" class="btn btn-primary btn-action">
-                                                <i class="fas fa-file-signature"></i> Agregar Acta
-                                            </a>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="tab-pane fade" id="contratos" role="tabpanel" aria-labelledby="contratos-tab">
-                            <?php if (empty($contratos)): ?>
-                            <div class="text-center py-5">
-                                <i class="fas fa-file-contract text-secondary mb-3" style="font-size: 3rem;"></i>
-                                <h5 class="text-secondary">No se encontraron contratos</h5>
-                                <p class="text-muted">Este contratista no tiene contratos registrados en el sistema.</p>
-                                <a href="main.php?page=agregar_contrato&contratista_id=<?php echo $contratista_id; ?><?php echo $proyecto_id ? '&proyecto_id='.$proyecto_id : ''; ?>" class="btn btn-primary mt-2">
-                                    <i class="fas fa-plus"></i> Agregar Contrato
-                                </a>
-                            </div>
-                            <?php else: ?>
-                            <div class="d-flex justify-content-between align-items-center mb-4">
-                                <h5 class="mb-0">Listado de Contratos</h5>
-                                <a href="main.php?page=agregar_contrato&contratista_id=<?php echo $contratista_id; ?><?php echo $proyecto_id ? '&proyecto_id='.$proyecto_id : ''; ?>" class="btn btn-primary btn-sm">
-                                    <i class="fas fa-plus"></i> Agregar Contrato
-                                </a>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="custom-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Proyecto</th>
-                                            <th>Tipo</th>
-                                            <th>Fecha Inicio</th>
-                                            <th>Fecha Fin</th>
-                                            <th>Valor</th>
-                                            <th>Estado</th>
-                                            <th>Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($contratos as $contrato): ?>
-                                        <tr>
-                                            <td>
-                                                <div style="max-width: 250px;">
-                                                    <div class="fw-bold"><?php echo htmlspecialchars($contrato['nombre_proyecto']); ?></div>
-                                                    <div class="text-muted small"><?php echo htmlspecialchars($contrato['entidad'] ?: ''); ?></div>
-                                                </div>
-                                            </td>
-                                            <td><?php echo htmlspecialchars($contrato['tipo_contrato_desc'] ?: '-'); ?></td>
-                                            <td><?php echo formatearFecha($contrato['fecha_inicio']); ?></td>
-                                            <td><?php echo formatearFecha($contrato['fecha_fin']); ?></td>
-                                            <td><?php echo formatearMoneda($contrato['valor']); ?></td>
-                                            <td>
-                                                <span class="status-badge status-<?php echo $contrato['estado']; ?>">
-                                                    <?php 
-                                                    if ($contrato['estado'] == 'A') {
-                                                        echo 'Activo';
-                                                    } elseif ($contrato['estado'] == 'F') {
-                                                        echo 'Finalizado';
-                                                    } elseif ($contrato['estado'] == 'I') {
-                                                        echo 'Inactivo';
-                                                    } else {
-                                                        echo $contrato['estado'];
-                                                    }
-                                                    ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <div class="d-flex gap-2">
-                                                    <a href="main.php?page=ver_contrato&id=<?php echo $contrato['numero_pro']; ?>&contratista_id=<?php echo $contratista_id; ?>" class="btn btn-info btn-sm">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                    <a href="main.php?page=editar_contrato&id=<?php echo $contrato['numero_pro']; ?>&contratista_id=<?php echo $contratista_id; ?>" class="btn btn-primary btn-sm">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <a href="main.php?page=proyecto_individual&id=<?php echo $contrato['numero_pro']; ?>" class="btn btn-secondary btn-sm">
-                                                        <i class="fas fa-project-diagram"></i>
-                                                    </a>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+                                       </div>
+                                       <div class="info-row">
+                                           <div class="info-label">Teléfono Fijo</div>
+                                           <div class="info-value">
+                                               <?php if (!empty($contratista['tel_fijo'])): ?>
+                                               <a href="tel:<?php echo htmlspecialchars($contratista['tel_fijo']); ?>" class="text-primary">
+                                                   <i class="fas fa-phone-alt me-1"></i> <?php echo htmlspecialchars($contratista['tel_fijo']); ?>
+                                               </a>
+                                               <?php else: ?>
+                                               -
+                                               <?php endif; ?>
+                                           </div>
+                                       </div>
+                                       <div class="info-row">
+                                           <div class="info-label">Teléfono Celular</div>
+                                           <div class="info-value">
+                                               <?php if (!empty($contratista['tel_celular'])): ?>
+                                               <a href="tel:<?php echo htmlspecialchars($contratista['tel_celular']); ?>" class="text-primary">
+                                                   <i class="fas fa-mobile-alt me-1"></i> <?php echo htmlspecialchars($contratista['tel_celular']); ?>
+                                               </a>
+                                               <?php else: ?>
+                                               -
+                                               <?php endif; ?>
+                                           </div>
+                                       </div>
+                                       <div class="info-row">
+                                           <div class="info-label">Correo Electrónico</div>
+                                           <div class="info-value">
+                                               <?php if (!empty($contratista['correo'])): ?>
+                                               <a href="mailto:<?php echo htmlspecialchars($contratista['correo']); ?>" class="text-primary">
+                                                   <i class="fas fa-envelope me-1"></i> <?php echo htmlspecialchars($contratista['correo']); ?>
+                                               </a>
+                                               <?php else: ?>
+                                               -
+                                               <?php endif; ?>
+                                           </div>
+                                       </div>
+                                   </div>
+                               </div>
+                               
+                               <div class="col-lg-6">
+                                   <div class="info-section">
+                                       <h5 class="info-section-title">Acciones Rápidas</h5>
+                                       <div class="d-flex flex-column gap-2">
+                                           <?php if (!empty($contratista['tel_celular'])): ?>
+                                           <a href="tel:<?php echo htmlspecialchars($contratista['tel_celular']); ?>" class="btn btn-info btn-action">
+                                               <i class="fas fa-phone-alt"></i> Llamar al Celular
+                                           </a>
+                                           <?php endif; ?>
+                                           
+                                           <?php if (!empty($contratista['correo'])): ?>
+                                           <a href="mailto:<?php echo htmlspecialchars($contratista['correo']); ?>" class="btn btn-primary btn-action">
+                                               <i class="fas fa-envelope"></i> Enviar Correo
+                                           </a>
+                                           <?php endif; ?>
+                                           
+                                           <a href="main.php?page=editar_contratista&id=<?php echo $contratista_id; ?><?php echo $proyecto_id ? '&proyecto_id='.$proyecto_id : ''; ?>" class="btn btn-secondary btn-action">
+                                               <i class="fas fa-edit"></i> Editar Información
+                                           </a>
+                                           
+                                           <?php if (!empty($contratos)): ?>
+                                           <a href="main.php?page=proyecto_individual&id=<?php echo $contratos[0]['numero_pro']; ?>" class="btn btn-primary btn-action">
+                                               <i class="fas fa-project-diagram"></i> Ver Proyecto Asociado
+                                           </a>
+                                           <?php endif; ?>
+                                       </div>
+                                   </div>
+                               </div>
+                           </div>
+                       </div>
+                       
+                       <!-- Tab de Contratos -->
+                       <div class="tab-pane fade" id="contratos" role="tabpanel" aria-labelledby="contratos-tab">
+                           <?php if (empty($contratos)): ?>
+                           <div class="text-center py-5">
+                               <i class="fas fa-file-contract text-secondary mb-3" style="font-size: 3rem;"></i>
+                               <h5 class="text-secondary">No se encontraron contratos</h5>
+                               <p class="text-muted">Este contratista no tiene contratos registrados en el sistema.</p>
+                               
+                           </div>
+                           <?php else: ?>
+                           <div class="d-flex justify-content-between align-items-center mb-4">
+                               <h5 class="mb-0">Listado de Contratos</h5>
+                               
+                           </div>
+                           <div class="table-responsive">
+                               <table class="custom-table">
+                                   <thead>
+                                       <tr>
+                                           <th>Proyecto</th>
+                                           <th>Tipo</th>
+                                           <th>Fecha Inicio</th>
+                                           <th>Fecha Fin</th>
+                                           <th>Valor</th>
+                                           <th>Estado</th>
+                                           <th>Acciones</th>
+                                       </tr>
+                                   </thead>
+                                   <tbody>
+                                       <?php foreach ($contratos as $contrato): ?>
+                                       <tr>
+                                           <td>
+                                               <div style="max-width: 250px;">
+                                                   <div class="fw-bold"><?php echo htmlspecialchars($contrato['nombre_proyecto']); ?></div>
+                                                   <div class="text-muted small"><?php echo htmlspecialchars($contrato['entidad'] ?: ''); ?></div>
+                                               </div>
+                                           </td>
+                                           <td><?php echo htmlspecialchars($contrato['tipo_contrato_desc'] ?: '-'); ?></td>
+                                           <td><?php echo formatearFecha($contrato['fecha_inicio']); ?></td>
+                                           <td><?php echo formatearFecha($contrato['fecha_fin']); ?></td>
+                                           <td><?php echo formatearMoneda($contrato['valor']); ?></td>
+                                           <td>
+                                               <span class="status-badge status-<?php echo $contrato['estado']; ?>">
+                                                   <?php 
+                                                   if ($contrato['estado'] == 'A') {
+                                                       echo 'Activo';
+                                                   } elseif ($contrato['estado'] == 'F') {
+                                                       echo 'Finalizado';
+                                                   } elseif ($contrato['estado'] == 'I') {
+                                                       echo 'Inactivo';
+                                                   } else {
+                                                       echo $contrato['estado'];
+                                                   }
+                                                   ?>
+                                               </span>
+                                           </td>
+                                           <td>
+                                               <div class="d-flex gap-2">
+                                                   <a href="main.php?page=ver_contrato&id=<?php echo $contrato['numero_pro']; ?>&contratista_id=<?php echo $contratista_id; ?>" class="btn btn-info btn-sm">
+                                                       <i class="fas fa-eye"></i>
+                                                   </a>
+                                                   <a href="main.php?page=editar_contrato&id=<?php echo $contrato['numero_pro']; ?>&contratista_id=<?php echo $contratista_id; ?>" class="btn btn-primary btn-sm">
+                                                       <i class="fas fa-edit"></i>
+                                                   </a>
+                                                   <a href="main.php?page=proyecto_individual&id=<?php echo $contrato['numero_pro']; ?>" class="btn btn-secondary btn-sm">
+                                                       <i class="fas fa-project-diagram"></i>
+                                                   </a>
+                                               </div>
+                                           </td>
+                                       </tr>
+                                       <?php endforeach; ?>
+                                   </tbody>
+                               </table>
+                           </div>
+                           <?php endif; ?>
+                       </div>
+                   </div>
+               </div>
+           </div>
+       </div>
+   </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var triggerTabList = [].slice.call(document.querySelectorAll('#contratistaTabs button'));
-    triggerTabList.forEach(function(triggerEl) {
-        var tabTrigger = new bootstrap.Tab(triggerEl);
-        
-        triggerEl.addEventListener('click', function(event) {
-            event.preventDefault();
-            tabTrigger.show();
-            
-            const tabId = this.getAttribute('data-bs-target').substring(1);
-            localStorage.setItem('activeContratistaTab', tabId);
-        });
-    });
-    
-    const activeTab = localStorage.getItem('activeContratistaTab');
-    if (activeTab) {
-        const tab = document.querySelector(`#contratistaTabs button[data-bs-target="#${activeTab}"]`);
-        if (tab) {
-            const tabInstance = new bootstrap.Tab(tab);
-            tabInstance.show();
-        }
-    }
+   var triggerTabList = [].slice.call(document.querySelectorAll('#contratistaTabs button'));
+   triggerTabList.forEach(function(triggerEl) {
+       var tabTrigger = new bootstrap.Tab(triggerEl);
+       
+       triggerEl.addEventListener('click', function(event) {
+           event.preventDefault();
+           tabTrigger.show();
+           
+           const tabId = this.getAttribute('data-bs-target').substring(1);
+           localStorage.setItem('activeContratistaTab', tabId);
+       });
+   });
+   
+   const activeTab = localStorage.getItem('activeContratistaTab');
+   if (activeTab) {
+       const tab = document.querySelector(`#contratistaTabs button[data-bs-target="#${activeTab}"]`);
+       if (tab) {
+           const tabInstance = new bootstrap.Tab(tab);
+           tabInstance.show();
+       }
+   }
 });
 </script>
