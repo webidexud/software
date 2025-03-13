@@ -1555,8 +1555,8 @@ body {
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group">
-                                            <a href="main.php?page=ver_contratista&id=<?php echo $contratista['identificacion']; ?>" class="action-button btn-info" title="Ver contratista">
-                                                <i class="fas fa-eye"></i>
+                                            <a href="main.php?page=ver_contratista&id=<?php echo $contratista['identificacion']; ?>&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-info" title="Ver contratista">
+                                                <i class="fas fa-eye"></i> Ver
                                             </a>
                                             <a href="main.php?page=editar_contratista&id=<?php echo $contratista['identificacion']; ?>&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-warning" title="Editar contratista">
                                                 <i class="fas fa-edit"></i>
@@ -1574,8 +1574,6 @@ body {
         </div>
     </div>
 </div>
-
-
 
 
 
