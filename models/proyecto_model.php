@@ -2515,36 +2515,30 @@ function obtenerContratistasProyecto($proyectoId) {
         $anio_pro = $rowProy['ANIO_PRO'];
         
         // Consulta SQL para obtener contratistas asociados al proyecto
-        // Adaptada a la estructura real de la base de datos
         $sql = "SELECT 
                     c.IDENTIFICACION,
-                    c.NOMBRE1,
+                    c.NOMBRE1, 
                     c.NOMBRE2,
                     c.APELLIDO1,
                     c.APELLIDO2,
                     c.TIPO_PERSONA,
                     tp.DESCRIPCION as TIPO_PERSONA_DESC,
-                    c.TIPO_NACIONALIDAD,
-                    tn.DESCRIPCION as TIPO_NACIONALIDAD_DESC,
                     c.DIRECCION,
                     c.TEL_FIJO,
                     c.TEL_CELULAR,
                     c.CORREO,
-                    c.GENERO,
-                    c.ESTADO,
                     po.FECHA_INICIO,
                     po.FECHA_TERMINACION as FECHA_FIN,
                     tc.DESCRIPCION as TIPO_CONTRATO_DESC,
                     po.VALOR,
-                    po.OBJETO as ROL_CONTRATISTA
+                    po.OBJETO as ROL_CONTRATISTA,
+                    po.NUMERO_CONTRATO
                 FROM 
                     CONTRATOS_OPS c
                 JOIN 
                     PROYECTO_OPS po ON c.IDENTIFICACION = po.IDENTIFICACION
                 LEFT JOIN
                     SIV_TIPO_PERSONA tp ON c.TIPO_PERSONA = tp.CODIGO
-                LEFT JOIN
-                    SIV_NACIONALIDAD tn ON c.TIPO_NACIONALIDAD = tn.CODIGO
                 LEFT JOIN
                     TIPO_CONTRATO tc ON po.TIPO_CONTRATO = tc.CODIGO
                 WHERE 
@@ -2585,7 +2579,7 @@ function obtenerContratistasProyecto($proyectoId) {
             }
             
             // Formatear nombre completo
-            if ($contratista['tipo_persona'] == 1) { // Persona Natural (según la estructura que proporcionaste)
+            if ($contratista['tipo_persona'] == 1) { // Persona Natural
                 $nombres = trim($contratista['nombre1'] . ' ' . ($contratista['nombre2'] ?? ''));
                 $apellidos = trim(($contratista['apellido1'] ?? '') . ' ' . ($contratista['apellido2'] ?? ''));
                 $contratista['nombre_completo'] = trim($nombres . ' ' . $apellidos);
@@ -2608,4 +2602,133 @@ function obtenerContratistasProyecto($proyectoId) {
     }
 }
 
+
+
+/**
+ * Obtiene las actas relacionadas con un contratista en un proyecto específico
+ * @param string $contratistaId ID del contratista
+ * @param int $proyectoId ID del proyecto
+ * @return array Lista de actas relacionadas con el contratista
+ */
+function obtenerActasContratistaProyecto($contratistaId, $proyectoId) {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Extraer ANIO_PRO del proyecto
+        $sqlProy = "SELECT ANIO_PRO FROM PROYECTO WHERE NUMERO_PRO = :id";
+        $stidProy = oci_parse($conn, $sqlProy);
+        oci_bind_by_name($stidProy, ':id', $proyectoId);
+        oci_execute($stidProy);
+        $rowProy = oci_fetch_assoc($stidProy);
+        
+        if (!$rowProy) {
+            return [];
+        }
+        
+        $anio_pro = $rowProy['ANIO_PRO'];
+        
+        // Consulta SQL para obtener actas relacionadas con el contratista en el proyecto
+        // Esta consulta busca actas que mencionen al contratista en sus observaciones
+        // o actas que estén asociadas directamente al contratista a través de referencias en la tabla
+        $sql = "SELECT 
+                    a.ANIO_PRO,
+                    a.NUMERO_PRO,
+                    a.NUMERO_ACTA,
+                    a.TIPO_ACTA,
+                    t.DESCRIPCION as TIPO_DESCRIPCION,
+                    a.FECHA_ACTA,
+                    a.OBSERVA,
+                    a.ESTADO,
+                    d.ARCHIVO
+                FROM 
+                    ACTA_PROYECTO a
+                LEFT JOIN 
+                    TIPO_ACTA t ON a.TIPO_ACTA = t.CODIGO
+                LEFT JOIN 
+                    DOCUMENTO_PROYECTO d ON a.ANIO_PRO = d.ANIO_PRO 
+                                        AND a.NUMERO_PRO = d.NUMERO_PRO 
+                                        AND a.NUMERO_ACTA = d.NUMERO_DOC
+                                        AND a.TIPO_ACTA = d.TIPO_DOC
+                WHERE 
+                    a.ANIO_PRO = :anio_pro
+                    AND a.NUMERO_PRO = :numero_pro
+                    AND a.ESTADO = 'A'
+                    AND (
+                        -- Buscar menciones del contratista en observaciones
+                        UPPER(a.OBSERVA) LIKE UPPER('%' || :contratista_id || '%')
+                        OR
+                        -- Buscar menciones del nombre del contratista
+                        EXISTS (
+                            SELECT 1 
+                            FROM CONTRATOS_OPS c
+                            WHERE c.IDENTIFICACION = :contratista_id
+                            AND (
+                                UPPER(a.OBSERVA) LIKE UPPER('%' || c.NOMBRE1 || '%')
+                                OR UPPER(a.OBSERVA) LIKE UPPER('%' || c.APELLIDO1 || '%')
+                                OR (c.NOMBRE1 IS NOT NULL AND c.APELLIDO1 IS NOT NULL AND 
+                                    UPPER(a.OBSERVA) LIKE UPPER('%' || c.NOMBRE1 || ' ' || c.APELLIDO1 || '%'))
+                            )
+                        )
+                        OR
+                        -- Actas de inicio o cierre generadas cuando se contrató a esta persona
+                        EXISTS (
+                            SELECT 1 
+                            FROM PROYECTO_OPS po
+                            WHERE po.IDENTIFICACION = :contratista_id
+                            AND po.ANIO_PRO = a.ANIO_PRO
+                            AND po.NUMERO_PRO = a.NUMERO_PRO
+                            AND (
+                                (a.TIPO_ACTA = 1 AND a.FECHA_ACTA BETWEEN po.FECHA_INICIO AND po.FECHA_INICIO + 15) OR
+                                (a.TIPO_ACTA = 3 AND a.FECHA_ACTA BETWEEN po.FECHA_TERMINACION - 15 AND po.FECHA_TERMINACION + 15)
+                            )
+                        )
+                    )
+                ORDER BY 
+                    a.FECHA_ACTA DESC, a.NUMERO_ACTA DESC";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de actas relacionadas con contratista: " . $e['message']);
+            return [];
+        }
+        
+        // Vincular parámetros
+        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
+        oci_bind_by_name($stid, ':numero_pro', $proyectoId);
+        oci_bind_by_name($stid, ':contratista_id', $contratistaId);
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de actas relacionadas con contratista: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $actas = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            // Convertir claves a minúsculas
+            $acta = array();
+            foreach ($row as $key => $value) {
+                $acta[strtolower($key)] = $value;
+            }
+            $actas[] = $acta;
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $actas;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerActasContratistaProyecto: " . $e->getMessage());
+        return [];
+    }
+}
 ?>

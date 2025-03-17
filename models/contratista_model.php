@@ -1,19 +1,20 @@
 <?php
-/**
- * Modelo para gestión de contratistas y sus actas
- */
-
-// Incluir el archivo de conexión si aún no está incluido
+// Incluir el archivo de conexión si no está incluido
 if (!function_exists('conectarOracle')) {
     require_once 'config/database.php';
 }
 
+// Incluir el modelo de proyecto si es necesario para obtener información básica
+if (!function_exists('obtenerProyectoDetalle')) {
+    require_once 'models/proyecto_model.php';
+}
+
 /**
- * Obtiene los datos completos de un contratista por su identificación
- * @param string $identificacion Número de identificación del contratista
+ * Obtiene información detallada de un contratista por su ID
+ * @param string $id Identificación del contratista
  * @return array|null Datos del contratista o null si no existe
  */
-function obtenerContratistaPorId($identificacion) {
+function obtenerContratistaPorId($id) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
@@ -43,48 +44,51 @@ function obtenerContratistaPorId($identificacion) {
                 LEFT JOIN
                     SIV_NACIONALIDAD tn ON c.TIPO_NACIONALIDAD = tn.CODIGO
                 WHERE 
-                    c.IDENTIFICACION = :identificacion
+                    c.IDENTIFICACION = :id
                     AND c.ESTADO = 'A'";
         
         // Preparar consulta
         $stid = oci_parse($conn, $sql);
         if (!$stid) {
             $e = oci_error($conn);
-            error_log("Error al preparar consulta de contratista: " . $e['message']);
+            error_log("Error al preparar consulta: " . $e['message']);
             return null;
         }
         
         // Vincular parámetros
-        oci_bind_by_name($stid, ':identificacion', $identificacion);
+        oci_bind_by_name($stid, ':id', $id);
         
         // Ejecutar consulta
         $r = oci_execute($stid);
         if (!$r) {
             $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de contratista: " . $e['message']);
+            error_log("Error al ejecutar consulta: " . $e['message']);
             return null;
         }
         
         // Obtener resultado
         $row = oci_fetch_assoc($stid);
         
+        // Si no hay resultados, retornar null
+        if (!$row) {
+            oci_free_statement($stid);
+            oci_close($conn);
+            return null;
+        }
+        
         // Convertir claves a minúsculas
-        if ($row) {
-            $contratista = array();
-            foreach ($row as $key => $value) {
-                $contratista[strtolower($key)] = $value;
-            }
-            
-            // Formatear nombre completo
-            if ($contratista['tipo_persona'] == 1) { // Persona Natural
-                $nombres = trim($contratista['nombre1'] . ' ' . ($contratista['nombre2'] ?? ''));
-                $apellidos = trim(($contratista['apellido1'] ?? '') . ' ' . ($contratista['apellido2'] ?? ''));
-                $contratista['nombre_completo'] = trim($nombres . ' ' . $apellidos);
-            } else { // Persona Jurídica u otro tipo
-                $contratista['nombre_completo'] = $contratista['nombre1']; // Asumiendo que es la razón social
-            }
-        } else {
-            $contratista = null;
+        $contratista = array();
+        foreach ($row as $key => $value) {
+            $contratista[strtolower($key)] = $value;
+        }
+        
+        // Agregar el nombre completo formateado
+        if ($contratista['tipo_persona'] == 1) { // Persona Natural
+            $nombres = trim($contratista['nombre1'] . ' ' . ($contratista['nombre2'] ?? ''));
+            $apellidos = trim(($contratista['apellido1'] ?? '') . ' ' . ($contratista['apellido2'] ?? ''));
+            $contratista['nombre_completo'] = trim($nombres . ' ' . $apellidos);
+        } else { // Persona Jurídica u otro tipo
+            $contratista['nombre_completo'] = $contratista['nombre1']; // Asumiendo que es la razón social
         }
         
         // Liberar recursos
@@ -100,67 +104,154 @@ function obtenerContratistaPorId($identificacion) {
 }
 
 /**
- * Obtiene los contratos de un contratista en un proyecto específico
- * @param string $identificacion Número de identificación del contratista
- * @param int $numeroProyecto Número del proyecto
- * @return array Lista de contratos
+ * Obtiene información resumida de un proyecto por su ID
+ * @param int $proyecto_id ID del proyecto
+ * @return array|null Datos resumidos del proyecto o null si no existe
  */
-function obtenerContratosContratista($identificacion, $numeroProyecto) {
+function obtenerProyectoResumido($proyecto_id) {
+    try {
+        // Si existe la función obtenerProyectoDetalle, usarla
+        if (function_exists('obtenerProyectoDetalle')) {
+            $proyecto = obtenerProyectoDetalle($proyecto_id);
+            
+            // Si obtuvimos el proyecto completo, devolver solo los campos necesarios
+            if ($proyecto) {
+                return [
+                    'numero_pro' => $proyecto['numero_pro'],
+                    'anio_pro' => $proyecto['anio_pro'],
+                    'numero_pro_entidad' => $proyecto['numero_pro_entidad'],
+                    'nombre' => $proyecto['nombre'],
+                    'entidad' => $proyecto['entidad'],
+                    'valor' => $proyecto['valor']
+                ];
+            }
+            
+            return null;
+        }
+        
+        // Si no existe la función, hacer una consulta directa
+        $conn = conectarOracle();
+        
+        $sql = "SELECT 
+                    p.NUMERO_PRO,
+                    p.ANIO_PRO,
+                    p.NOMBRE,
+                    p.VALOR,
+                    en.NUMERO_PRO_ENTIDAD,
+                    e.DESCRIPCION as ENTIDAD
+                FROM 
+                    PROYECTO p
+                LEFT JOIN 
+                    ENTE_SUSCRIPTOR en ON p.NUMERO_PRO = en.NUMERO_PRO AND p.ANIO_PRO = en.ANIO_PRO
+                LEFT JOIN 
+                    ENTIDAD e ON en.ENTIDAD = e.CODIGO
+                WHERE 
+                    p.NUMERO_PRO = :id
+                    AND ROWNUM = 1";
+        
+        $stid = oci_parse($conn, $sql);
+        oci_bind_by_name($stid, ':id', $proyecto_id);
+        $r = oci_execute($stid);
+        
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta: " . $e['message']);
+            return null;
+        }
+        
+        $row = oci_fetch_assoc($stid);
+        
+        // Convertir claves a minúsculas
+        $proyecto = array();
+        if ($row) {
+            foreach ($row as $key => $value) {
+                $proyecto[strtolower($key)] = $value;
+            }
+        }
+        
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return !empty($proyecto) ? $proyecto : null;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerProyectoResumido: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Obtiene los contratos de un contratista en un proyecto específico
+ * @param string $contratista_id ID del contratista
+ * @param int $proyecto_id ID del proyecto
+ * @return array Lista de contratos del contratista en el proyecto
+ */
+function obtenerContratosContratista($contratista_id, $proyecto_id) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
         
-        // Consulta SQL para obtener contratos del contratista en el proyecto
+        // Obtener ANIO_PRO del proyecto
+        $sqlAnio = "SELECT ANIO_PRO FROM PROYECTO WHERE NUMERO_PRO = :id";
+        $stmtAnio = oci_parse($conn, $sqlAnio);
+        oci_bind_by_name($stmtAnio, ':id', $proyecto_id);
+        oci_execute($stmtAnio);
+        $rowAnio = oci_fetch_assoc($stmtAnio);
+        
+        if (!$rowAnio) {
+            return [];
+        }
+        
+        $anio_pro = $rowAnio['ANIO_PRO'];
+        
+        // Consulta SQL para obtener los contratos del contratista en el proyecto
         $sql = "SELECT 
                     po.ANIO_PRO,
                     po.NUMERO_PRO,
                     po.IDENTIFICACION,
                     po.NUMERO_CONTRATO,
-                    po.ANIO as ANIO_CONTRATO,
+                    po.ANIO_CONTRATO,
+                    po.VIGENCIA_FISCAL,
+                    po.TIPO_CONTRATO,
+                    tc.DESCRIPCION as TIPO_CONTRATO_DESC,
                     po.OBJETO,
-                    po.FECHA_SUSCRIPCION,
                     po.FECHA_INICIO,
                     po.FECHA_TERMINACION as FECHA_FIN,
                     po.VALOR,
-                    po.TIPO_CONTRATO,
-                    tc.DESCRIPCION as TIPO_CONTRATO_DESC,
                     po.SITUACION_CONTRATO,
-                    s.DESCRIPCION as SITUACION_DESC,
-                    po.CDP,
-                    po.FECHA_CDP,
-                    po.RP,
-                    po.FECHA_RP,
-                    po.SECOP
+                    sc.DESCRIPCION as SITUACION_DESC
                 FROM 
                     PROYECTO_OPS po
                 LEFT JOIN
                     TIPO_CONTRATO tc ON po.TIPO_CONTRATO = tc.CODIGO
                 LEFT JOIN
-                    SITUACION s ON po.SITUACION_CONTRATO = s.CODIGO
+                    SITUACION sc ON po.SITUACION_CONTRATO = sc.CODIGO
                 WHERE 
-                    po.NUMERO_PRO = :numero_pro
+                    po.ANIO_PRO = :anio_pro
+                    AND po.NUMERO_PRO = :numero_pro
                     AND po.IDENTIFICACION = :identificacion
                     AND po.ESTADO = 'A'
                 ORDER BY 
-                    po.FECHA_INICIO DESC";
+                    po.NUMERO_CONTRATO";
         
         // Preparar consulta
         $stid = oci_parse($conn, $sql);
         if (!$stid) {
             $e = oci_error($conn);
-            error_log("Error al preparar consulta de contratos: " . $e['message']);
+            error_log("Error al preparar consulta: " . $e['message']);
             return [];
         }
         
         // Vincular parámetros
-        oci_bind_by_name($stid, ':numero_pro', $numeroProyecto);
-        oci_bind_by_name($stid, ':identificacion', $identificacion);
+        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
+        oci_bind_by_name($stid, ':numero_pro', $proyecto_id);
+        oci_bind_by_name($stid, ':identificacion', $contratista_id);
         
         // Ejecutar consulta
         $r = oci_execute($stid);
         if (!$r) {
             $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de contratos: " . $e['message']);
+            error_log("Error al ejecutar consulta: " . $e['message']);
             return [];
         }
         
@@ -189,68 +280,87 @@ function obtenerContratosContratista($identificacion, $numeroProyecto) {
 }
 
 /**
- * Obtiene las actas asociadas a un contratista en un proyecto específico
- * @param string $identificacion Número de identificación del contratista
- * @param int $numeroProyecto Número del proyecto
- * @param int $numeroContrato Número del contrato (opcional)
+ * Obtiene las actas asociadas a un contratista en un proyecto y contrato específicos
+ * @param string $contratista_id ID del contratista
+ * @param int $proyecto_id ID del proyecto
+ * @param int $numero_contrato Número del contrato (opcional)
  * @return array Lista de actas
  */
-function obtenerActasContratista($identificacion, $numeroProyecto, $numeroContrato = null) {
+function obtenerActasContratista($contratista_id, $proyecto_id, $numero_contrato = null) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
         
-        // Consulta SQL para obtener actas del contratista en el proyecto
-        $sql = "SELECT 
-                    ac.ANIO_PRO,
-                    ac.NUMERO_PRO,
-                    ac.ANIO_CONTRATO,
-                    ac.NUMERO_CONTRATO,
-                    ac.NUMERO_ACTA,
-                    ac.TIPO_ACTA,
-                    ta.DESCRIPCION as TIPO_ACTA_DESC,
-                    ac.FECHA_ACTA,
-                    ac.OBSERVA,
-                    ac.ESTADO,
-                    ac.NUMERO_OP,
-                    ac.VALOR_OP
-                FROM 
-                    ACTA_CONTRATO ac
-                LEFT JOIN
-                    TIPO_ACTA ta ON ac.TIPO_ACTA = ta.CODIGO
-                WHERE 
-                    ac.NUMERO_PRO = :numero_pro
-                    AND ac.CONTRATISTA = :identificacion
-                    AND ac.ESTADO = 'A'";
+        // Obtener ANIO_PRO del proyecto
+        $sqlAnio = "SELECT ANIO_PRO FROM PROYECTO WHERE NUMERO_PRO = :id";
+        $stmtAnio = oci_parse($conn, $sqlAnio);
+        oci_bind_by_name($stmtAnio, ':id', $proyecto_id);
+        oci_execute($stmtAnio);
+        $rowAnio = oci_fetch_assoc($stmtAnio);
         
-        // Añadir filtro por número de contrato si se proporciona
-        if ($numeroContrato !== null) {
-            $sql .= " AND ac.NUMERO_CONTRATO = :numero_contrato";
+        if (!$rowAnio) {
+            return [];
         }
         
-        $sql .= " ORDER BY ac.FECHA_ACTA DESC, ac.NUMERO_ACTA DESC";
+        $anio_pro = $rowAnio['ANIO_PRO'];
+        
+        // Consulta base para obtener actas
+        $sql = "SELECT 
+                    a.ANIO_PRO,
+                    a.NUMERO_PRO,
+                    a.NUMERO_COM,
+                    a.RUBRO,
+                    a.ITEM,
+                    a.ANIO_CONTRATO,
+                    a.NUMERO_CONTRATO,
+                    a.NUMERO_ACTA,
+                    a.TIPO_ACTA,
+                    ta.DESCRIPCION as TIPO_ACTA_DESC,
+                    a.FECHA_ACTA,
+                    a.OBSERVA,
+                    a.ESTADO,
+                    a.CONTRATISTA,
+                    a.NUMERO_OP,
+                    a.VALOR_OP
+                FROM 
+                    ACTA_CONTRATO a
+                LEFT JOIN
+                    TIPO_ACTA ta ON a.TIPO_ACTA = ta.CODIGO
+                WHERE 
+                    a.ANIO_PRO = :anio_pro
+                    AND a.NUMERO_PRO = :numero_pro
+                    AND a.CONTRATISTA = :contratista";
+        
+        // Agregar filtro por número de contrato si se proporciona
+        if ($numero_contrato !== null) {
+            $sql .= " AND a.NUMERO_CONTRATO = :numero_contrato";
+        }
+        
+        $sql .= " AND a.ESTADO = 'A'
+                ORDER BY a.FECHA_ACTA DESC, a.NUMERO_ACTA DESC";
         
         // Preparar consulta
         $stid = oci_parse($conn, $sql);
         if (!$stid) {
             $e = oci_error($conn);
-            error_log("Error al preparar consulta de actas: " . $e['message']);
+            error_log("Error al preparar consulta: " . $e['message']);
             return [];
         }
         
         // Vincular parámetros
-        oci_bind_by_name($stid, ':numero_pro', $numeroProyecto);
-        oci_bind_by_name($stid, ':identificacion', $identificacion);
+        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
+        oci_bind_by_name($stid, ':numero_pro', $proyecto_id);
+        oci_bind_by_name($stid, ':contratista', $contratista_id);
         
-        if ($numeroContrato !== null) {
-            oci_bind_by_name($stid, ':numero_contrato', $numeroContrato);
+        if ($numero_contrato !== null) {
+            oci_bind_by_name($stid, ':numero_contrato', $numero_contrato);
         }
         
         // Ejecutar consulta
         $r = oci_execute($stid);
         if (!$r) {
             $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de actas: " . $e['message']);
+            error_log("Error al ejecutar consulta: " . $e['message']);
             return [];
         }
         
@@ -279,66 +389,82 @@ function obtenerActasContratista($identificacion, $numeroProyecto, $numeroContra
 }
 
 /**
- * Obtiene los documentos asociados a un contratista en un proyecto específico
- * @param string $identificacion Número de identificación del contratista
- * @param int $numeroProyecto Número del proyecto
- * @param int $numeroContrato Número del contrato (opcional)
+ * Obtiene los documentos asociados a un contratista en un proyecto y contrato específicos
+ * @param string $contratista_id ID del contratista
+ * @param int $proyecto_id ID del proyecto
+ * @param int $numero_contrato Número del contrato (opcional)
  * @return array Lista de documentos
  */
-function obtenerDocumentosContratista($identificacion, $numeroProyecto, $numeroContrato = null) {
+function obtenerDocumentosContratista($contratista_id, $proyecto_id, $numero_contrato = null) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
         
-        // Consulta SQL para obtener documentos del contratista en el proyecto
-        $sql = "SELECT 
-                    dc.ANIO_PRO,
-                    dc.NUMERO_PRO,
-                    dc.ANIO_CONTRATO,
-                    dc.NUMERO_CONTRATO,
-                    dc.NUMERO_DOC,
-                    dc.TIPO_DOC,
-                    td.DESCRIPCION as TIPO_DOC_DESC,
-                    dc.FECHA_DOC,
-                    dc.ARCHIVO,
-                    dc.ESTADO
-                FROM 
-                    DOCUMENTO_CONTRATO dc
-                LEFT JOIN
-                    TIPO_DOCUMENTO td ON dc.TIPO_DOC = td.CODIGO
-                WHERE 
-                    dc.NUMERO_PRO = :numero_pro
-                    AND dc.CONTRATISTA = :identificacion
-                    AND dc.ESTADO = 'A'";
+        // Obtener ANIO_PRO del proyecto
+        $sqlAnio = "SELECT ANIO_PRO FROM PROYECTO WHERE NUMERO_PRO = :id";
+        $stmtAnio = oci_parse($conn, $sqlAnio);
+        oci_bind_by_name($stmtAnio, ':id', $proyecto_id);
+        oci_execute($stmtAnio);
+        $rowAnio = oci_fetch_assoc($stmtAnio);
         
-        // Añadir filtro por número de contrato si se proporciona
-        if ($numeroContrato !== null) {
-            $sql .= " AND dc.NUMERO_CONTRATO = :numero_contrato";
+        if (!$rowAnio) {
+            return [];
         }
         
-        $sql .= " ORDER BY dc.FECHA_DOC DESC, dc.NUMERO_DOC DESC";
+        $anio_pro = $rowAnio['ANIO_PRO'];
+        
+        // Consulta base para obtener documentos
+        $sql = "SELECT 
+                    d.ANIO_PRO,
+                    d.NUMERO_PRO,
+                    d.NUMERO_CONTRATO,
+                    d.ANIO_CONTRATO,
+                    d.NUMERO_DOC,
+                    d.TIPO_DOC,
+                    td.DESCRIPCION as TIPO_DOC_DESC,
+                    d.FECHA_DOC,
+                    d.ARCHIVO,
+                    d.ESTADO,
+                    d.CONTRATISTA
+                FROM 
+                    DOCUMENTO_CONTRATO d
+                LEFT JOIN
+                    TIPO_DOCUMENTO td ON d.TIPO_DOC = td.CODIGO
+                WHERE 
+                    d.ANIO_PRO = :anio_pro
+                    AND d.NUMERO_PRO = :numero_pro
+                    AND d.CONTRATISTA = :contratista";
+        
+        // Agregar filtro por número de contrato si se proporciona
+        if ($numero_contrato !== null) {
+            $sql .= " AND d.NUMERO_CONTRATO = :numero_contrato";
+        }
+        
+        $sql .= " AND d.ESTADO = 'A'
+                ORDER BY d.FECHA_DOC DESC, d.NUMERO_DOC DESC";
         
         // Preparar consulta
         $stid = oci_parse($conn, $sql);
         if (!$stid) {
             $e = oci_error($conn);
-            error_log("Error al preparar consulta de documentos: " . $e['message']);
+            error_log("Error al preparar consulta: " . $e['message']);
             return [];
         }
         
         // Vincular parámetros
-        oci_bind_by_name($stid, ':numero_pro', $numeroProyecto);
-        oci_bind_by_name($stid, ':identificacion', $identificacion);
+        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
+        oci_bind_by_name($stid, ':numero_pro', $proyecto_id);
+        oci_bind_by_name($stid, ':contratista', $contratista_id);
         
-        if ($numeroContrato !== null) {
-            oci_bind_by_name($stid, ':numero_contrato', $numeroContrato);
+        if ($numero_contrato !== null) {
+            oci_bind_by_name($stid, ':numero_contrato', $numero_contrato);
         }
         
         // Ejecutar consulta
         $r = oci_execute($stid);
         if (!$r) {
             $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de documentos: " . $e['message']);
+            error_log("Error al ejecutar consulta: " . $e['message']);
             return [];
         }
         
@@ -365,74 +491,4 @@ function obtenerDocumentosContratista($identificacion, $numeroProyecto, $numeroC
         return [];
     }
 }
-
-/**
- * Obtiene el detalle de un proyecto
- * @param int $numeroProyecto Número del proyecto
- * @return array|null Datos del proyecto o null si no existe
- */
-function obtenerProyectoResumido($numeroProyecto) {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL para obtener datos básicos del proyecto
-        $sql = "SELECT 
-                    p.ANIO_PRO,
-                    p.NUMERO_PRO,
-                    p.NOMBRE,
-                    p.VALOR,
-                    (SELECT es.NUMERO_PRO_ENTIDAD FROM ENTE_SUSCRIPTOR es WHERE es.NUMERO_PRO = p.NUMERO_PRO AND ROWNUM = 1) as NUMERO_PRO_ENTIDAD,
-                    (SELECT e.DESCRIPCION FROM ENTIDAD e JOIN ENTE_SUSCRIPTOR es ON e.CODIGO = es.ENTIDAD WHERE es.NUMERO_PRO = p.NUMERO_PRO AND ROWNUM = 1) as ENTIDAD
-                FROM 
-                    PROYECTO p
-                WHERE 
-                    p.NUMERO_PRO = :numero_pro
-                    AND p.ESTADO = 'A'";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta de proyecto: " . $e['message']);
-            return null;
-        }
-        
-        // Vincular parámetros
-        oci_bind_by_name($stid, ':numero_pro', $numeroProyecto);
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de proyecto: " . $e['message']);
-            return null;
-        }
-        
-        // Obtener resultado
-        $row = oci_fetch_assoc($stid);
-        
-        // Convertir claves a minúsculas
-        if ($row) {
-            $proyecto = array();
-            foreach ($row as $key => $value) {
-                $proyecto[strtolower($key)] = $value;
-            }
-        } else {
-            $proyecto = null;
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $proyecto;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerProyectoResumido: " . $e->getMessage());
-        return null;
-    }
-}
-
-
 ?>
