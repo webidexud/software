@@ -30,59 +30,24 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('info_general'); ?>" href="main.php?page=info_general">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-email-83 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-info-circle text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Información General</span>
           </a>
         </li>
         <li class="nav-item">
-          <!--<a class="nav-link <?php echo isActive('dashboard'); ?>" href="main.php?page=dashboard" onclick="toggleSubmenu(this, event)">-->
           <a class="nav-link <?php echo isActive('dashboard'); ?>" href="main.php?page=dashboard">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-tv-2 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-chart-pie text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">DashBoard</span>
           </a>
-          <!--
-          <ul class="nav nav-sm flex-column submenu <?php echo isSubmenuOpen(['ano_suscripcion', 'tipo_proyecto', 'modalidad', 'ente_contratante', 'unidad_ejecutora', 'situacion_admin', 'financiacion', 'coordinador', 'asesores', 'ficha_tecnica']); ?>">
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('ano_suscripcion'); ?>" href="main.php?page=ano_suscripcion">Año Suscripción</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('tipo_proyecto'); ?>" href="main.php?page=tipo_proyecto">Tipo de Proyecto</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('modalidad'); ?>" href="main.php?page=modalidad">Modalidad</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('ente_contratante'); ?>" href="main.php?page=ente_contratante">Ente Contratante</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('unidad_ejecutora'); ?>" href="main.php?page=unidad_ejecutora">Unidad Ejecutora</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('situacion_admin'); ?>" href="main.php?page=situacion_admin">Situación Admin.</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('financiacion'); ?>" href="main.php?page=financiacion">Financiación</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('coordinador'); ?>" href="main.php?page=coordinador">Coordinador</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('asesores'); ?>" href="main.php?page=asesores">Asesores</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link ps-4 <?php echo isActive('ficha_tecnica'); ?>" href="main.php?page=ficha_tecnica">Ficha Técnica</a>
-            </li>
-          </ul>
         </li>
--->
         <!-- Otros elementos del menú -->
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('proyecto'); ?>" href="main.php?page=proyecto">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-chart-bar-32 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-folder-open text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Proyectos</span>
           </a>
@@ -90,7 +55,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('consultas_especializadas'); ?>" href="main.php?page=consultas_especializadas">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-chart-bar-32 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-search text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Consultas Especializadas</span>
           </a>
@@ -98,7 +63,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('consulta_natural'); ?>" href="main.php?page=consulta_natural">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-chat-round text-dark text-sm opacity-10"></i>
+              <i class="fas fa-comments text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Consulta Natural</span>
           </a>
@@ -106,7 +71,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('entidades'); ?>" href="main.php?page=entidad">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-building text-dark text-sm opacity-10"></i>
+              <i class="fas fa-building text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Entidades</span>
           </a>
@@ -115,7 +80,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('comite_central'); ?>" href="main.php?page=comite_central">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-single-02 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-users text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Comité Central</span>
           </a>
@@ -123,7 +88,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('contratos'); ?>" href="main.php?page=contratos">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-single-copy-04 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-file-contract text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Contratos</span>
           </a>
@@ -131,7 +96,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('convocatorias'); ?>" href="main.php?page=convocatorias">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-notification-70 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-bullhorn text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Convocatorias</span>
           </a>
@@ -139,7 +104,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('resoluciones'); ?>" href="main.php?page=resoluciones">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-paper-diploma text-dark text-sm opacity-10"></i>
+              <i class="fas fa-gavel text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Resoluciones</span>
           </a>
@@ -147,7 +112,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link <?php echo isActive('usuario'); ?>" href="main.php?page=usuario">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-circle-08 text-dark text-sm opacity-10"></i>
+              <i class="fas fa-user text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Usuario</span>
           </a>
@@ -155,7 +120,7 @@ function isSubmenuOpen($pages) {
         <li class="nav-item">
           <a class="nav-link" href="logout.php">
             <div class="icon icon-shape icon-sm border-radius-md text-center me-2 d-flex align-items-center justify-content-center">
-              <i class="ni ni-button-power text-dark text-sm opacity-10"></i>
+              <i class="fas fa-sign-out-alt text-dark text-sm opacity-10"></i>
             </div>
             <span class="nav-link-text ms-1">Cerrar Sesión</span>
           </a>
