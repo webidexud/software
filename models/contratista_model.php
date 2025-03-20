@@ -91,63 +91,657 @@ function obtenerTodosContratistas() {
 }
 
 /**
- * Obtiene un contratista por su identificación
- * @param int $identificacion Número de identificación del contratista
+ * Modelo para la gestión de contratistas
+ * 
+ * Este archivo contiene funciones para la gestión de contratistas
+ * y sus contratos asociados a proyectos
+ */
+
+// Incluir el archivo de conexión
+require_once 'config/database.php';
+
+/**
+ * Obtiene todos los tipos de persona
+ * @return array Lista de tipos de persona
+ */
+function obtenerTiposPersona() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM SIV_TIPO_PERSONA
+                ORDER BY CODIGO";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de tipos de persona: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de tipos de persona: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $tipos = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $tipos[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $tipos;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerTiposPersona: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Natural'],
+            ['codigo' => 2, 'descripcion' => 'Jurídica']
+        ];
+    }
+}
+
+/**
+ * Obtiene todos los tipos de nacionalidad
+ * @return array Lista de tipos de nacionalidad
+ */
+function obtenerTiposNacionalidad() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM SIV_NACIONALIDAD
+                ORDER BY CODIGO";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de nacionalidades: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de nacionalidades: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $tipos = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $tipos[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $tipos;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerTiposNacionalidad: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Colombiana'],
+            ['codigo' => 2, 'descripcion' => 'Extranjera']
+        ];
+    }
+}
+
+/**
+ * Obtiene todos los tipos de contrato
+ * @return array Lista de tipos de contrato
+ */
+function obtenerTiposContrato() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM TIPO_CONTRATO
+                ORDER BY CODIGO";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de tipos de contrato: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de tipos de contrato: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $tipos = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $tipos[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $tipos;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerTiposContrato: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Prestación de Servicios'],
+            ['codigo' => 2, 'descripcion' => 'Contrato Laboral'],
+            ['codigo' => 3, 'descripcion' => 'Obra o Labor']
+        ];
+    }
+}
+
+/**
+ * Obtiene todos los tipos de vinculación
+ * @return array Lista de tipos de vinculación
+ */
+function obtenerTiposVinculacion() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM VINCULACION
+                ORDER BY CODIGO";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de tipos de vinculación: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de tipos de vinculación: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $tipos = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $tipos[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $tipos;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerTiposVinculacion: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Directa'],
+            ['codigo' => 2, 'descripcion' => 'Indirecta']
+        ];
+    }
+}
+
+/**
+ * Obtiene todas las facultades
+ * @return array Lista de facultades
+ */
+function obtenerFacultades() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM FACULTAD
+                ORDER BY DESCRIPCION";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de facultades: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de facultades: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $facultades = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $facultades[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $facultades;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerFacultades: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Facultad de Ingeniería'],
+            ['codigo' => 2, 'descripcion' => 'Facultad de Ciencias y Educación'],
+            ['codigo' => 3, 'descripcion' => 'Facultad de Artes']
+        ];
+    }
+}
+
+/**
+ * Obtiene todos los proyectos curriculares
+ * @return array Lista de proyectos curriculares
+ */
+function obtenerProyectosCurriculares() {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL
+        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
+                FROM PROYECTO_CURRICULAR
+                ORDER BY DESCRIPCION";
+        
+        // Verificar si la tabla existe, si no existe, consultar otra tabla similar
+        $stid_check = oci_parse($conn, "SELECT COUNT(*) as existe FROM ALL_TABLES WHERE TABLE_NAME = 'PROYECTO_CURRICULAR'");
+        oci_execute($stid_check);
+        $row_check = oci_fetch_assoc($stid_check);
+        
+        if ($row_check['EXISTE'] == 0) {
+            // Si la tabla no existe, usar una consulta alternativa o retornar datos de ejemplo
+            oci_free_statement($stid_check);
+            oci_close($conn);
+            
+            return [
+                ['codigo' => 1, 'descripcion' => 'Ingeniería de Sistemas'],
+                ['codigo' => 2, 'descripcion' => 'Ingeniería Industrial'],
+                ['codigo' => 3, 'descripcion' => 'Licenciatura en Educación']
+            ];
+        }
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta de proyectos curriculares: " . $e['message']);
+            return [];
+        }
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta de proyectos curriculares: " . $e['message']);
+            return [];
+        }
+        
+        // Procesar resultados
+        $proyectos = [];
+        
+        while ($row = oci_fetch_assoc($stid)) {
+            $proyectos[] = [
+                'codigo' => $row['CODIGO'],
+                'descripcion' => $row['DESCRIPCION']
+            ];
+        }
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $proyectos;
+        
+    } catch (Exception $e) {
+        error_log("Error en obtenerProyectosCurriculares: " . $e->getMessage());
+        
+        // Datos de ejemplo en caso de error
+        return [
+            ['codigo' => 1, 'descripcion' => 'Ingeniería de Sistemas'],
+            ['codigo' => 2, 'descripcion' => 'Ingeniería Industrial'],
+            ['codigo' => 3, 'descripcion' => 'Licenciatura en Educación']
+        ];
+    }
+}
+
+/**
+ * Verifica si un contratista existe por su identificación
+ * @param string $identificacion Número de identificación del contratista
+ * @return bool True si existe, False si no existe
+ */
+function verificarContratista($identificacion) {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Consulta SQL para verificar si existe
+        $sql = "SELECT COUNT(*) as total FROM CONTRATOS_OPS WHERE IDENTIFICACION = :id";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta para verificar contratista: " . $e['message']);
+            return false;
+        }
+        
+        // Vincular parámetros
+        oci_bind_by_name($stid, ':id', $identificacion);
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta para verificar contratista: " . $e['message']);
+            return false;
+        }
+        
+        // Obtener resultado
+        $row = oci_fetch_assoc($stid);
+        $existe = ($row['TOTAL'] > 0);
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $existe;
+        
+    } catch (Exception $e) {
+        error_log("Error en verificarContratista: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Crea un nuevo contratista
+ * @param array $datos Datos del contratista
+ * @return bool True si se creó correctamente, False en caso de error
+ */
+function crearContratista($datos) {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Iniciar transacción
+        oci_set_action($conn, 'crearContratista');
+        
+        // Consulta SQL para insertar en CONTRATOS_OPS
+        $sql = "INSERT INTO CONTRATOS_OPS (
+                    IDENTIFICACION, NOMBRE1, NOMBRE2, APELLIDO1, APELLIDO2,
+                    TIPO_PERSONA, TIPO_NACIONALIDAD, FECHA_NACIMIENTO,
+                    DIRECCION, TEL_FIJO, TEL_CELULAR, CORREO, GENERO, ESTADO
+                ) VALUES (
+                    :identificacion, :nombre1, :nombre2, :apellido1, :apellido2,
+                    :tipo_persona, :tipo_nacionalidad, TO_DATE(:fecha_nacimiento, 'YYYY-MM-DD'),
+                    :direccion, :tel_fijo, :tel_celular, :correo, :genero, 'A'
+                )";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta para crear contratista: " . $e['message']);
+            return false;
+        }
+        
+        // Vincular parámetros con valores por defecto para nulos
+        $nombre1 = $datos['nombre1'] ?? '';
+        $nombre2 = $datos['nombre2'] ?? '';
+        $apellido1 = $datos['apellido1'] ?? '';
+        $apellido2 = $datos['apellido2'] ?? '';
+        $tipo_persona = $datos['tipo_persona'] ?? 1;
+        $tipo_nacionalidad = $datos['tipo_nacionalidad'] ?? 1;
+        $fecha_nacimiento = $datos['fecha_nacimiento'] ?? null;
+        $direccion = $datos['direccion'] ?? '';
+        $tel_fijo = $datos['tel_fijo'] ?? '';
+        $tel_celular = $datos['tel_celular'] ?? '';
+        $correo = $datos['correo'] ?? '';
+        $genero = $datos['genero'] ?? 'M';
+        
+        oci_bind_by_name($stid, ':identificacion', $datos['identificacion']);
+        oci_bind_by_name($stid, ':nombre1', $nombre1);
+        oci_bind_by_name($stid, ':nombre2', $nombre2);
+        oci_bind_by_name($stid, ':apellido1', $apellido1);
+        oci_bind_by_name($stid, ':apellido2', $apellido2);
+        oci_bind_by_name($stid, ':tipo_persona', $tipo_persona);
+        oci_bind_by_name($stid, ':tipo_nacionalidad', $tipo_nacionalidad);
+        oci_bind_by_name($stid, ':fecha_nacimiento', $fecha_nacimiento);
+        oci_bind_by_name($stid, ':direccion', $direccion);
+        oci_bind_by_name($stid, ':tel_fijo', $tel_fijo);
+        oci_bind_by_name($stid, ':tel_celular', $tel_celular);
+        oci_bind_by_name($stid, ':correo', $correo);
+        oci_bind_by_name($stid, ':genero', $genero);
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid, OCI_NO_AUTO_COMMIT);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta para crear contratista: " . $e['message']);
+            oci_rollback($conn);
+            return false;
+        }
+        
+        // Confirmar transacción
+        $commit = oci_commit($conn);
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $commit;
+        
+    } catch (Exception $e) {
+        error_log("Error en crearContratista: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Asocia un contratista a un proyecto
+ * @param array $datos Datos del contrato de proyecto
+ * @return bool True si se asoció correctamente, False en caso de error
+ */
+function asociarContratistaProyecto($datos) {
+    try {
+        // Obtener conexión
+        $conn = conectarOracle();
+        
+        // Iniciar transacción
+        oci_set_action($conn, 'asociarContratistaProyecto');
+        
+        // Consulta SQL para insertar en PROYECTO_OPS
+        $sql = "INSERT INTO PROYECTO_OPS (
+                    ANIO_PRO, NUMERO_PRO, IDENTIFICACION, NUMERO_CONTRATO,
+                    TIPO_CONTRATO, TIPO_VINCULACION, FACULTAD, PROYECTO_CURRICULAR,
+                    OBJETO, FECHA_SUSCRIPCION, FECHA_INICIO, FECHA_TERMINACION,
+                    VALOR, OBSERVACIONES, UNIDAD, ESTADO
+                ) VALUES (
+                    :anio_pro, :numero_pro, :identificacion, :numero_contrato,
+                    :tipo_contrato, :tipo_vinculacion, :facultad, :proyecto_curricular,
+                    :objeto, TO_DATE(:fecha_suscripcion, 'YYYY-MM-DD'), 
+                    TO_DATE(:fecha_inicio, 'YYYY-MM-DD'), TO_DATE(:fecha_terminacion, 'YYYY-MM-DD'),
+                    :valor, :observaciones, :unidad, 'A'
+                )";
+        
+        // Preparar consulta
+        $stid = oci_parse($conn, $sql);
+        if (!$stid) {
+            $e = oci_error($conn);
+            error_log("Error al preparar consulta para asociar contratista: " . $e['message']);
+            return false;
+        }
+        
+        // Vincular parámetros con valores por defecto para nulos
+        $tipo_vinculacion = $datos['tipo_vinculacion'] ?? null;
+        $facultad = $datos['facultad'] ?? null;
+        $proyecto_curricular = $datos['proyecto_curricular'] ?? null;
+        $objeto = $datos['objeto'] ?? '';
+        $fecha_suscripcion = $datos['fecha_suscripcion'] ?? $datos['fecha_inicio'] ?? date('Y-m-d');
+        $valor = $datos['valor'] ?? 0;
+        $observaciones = $datos['observaciones'] ?? '';
+        $unidad = $datos['unidad'] ?? null;
+        
+        oci_bind_by_name($stid, ':anio_pro', $datos['anio_pro']);
+        oci_bind_by_name($stid, ':numero_pro', $datos['numero_pro']);
+        oci_bind_by_name($stid, ':identificacion', $datos['identificacion']);
+        oci_bind_by_name($stid, ':numero_contrato', $datos['numero_contrato']);
+        oci_bind_by_name($stid, ':tipo_contrato', $datos['tipo_contrato']);
+        oci_bind_by_name($stid, ':tipo_vinculacion', $tipo_vinculacion);
+        oci_bind_by_name($stid, ':facultad', $facultad);
+        oci_bind_by_name($stid, ':proyecto_curricular', $proyecto_curricular);
+        oci_bind_by_name($stid, ':objeto', $objeto);
+        oci_bind_by_name($stid, ':fecha_suscripcion', $fecha_suscripcion);
+        oci_bind_by_name($stid, ':fecha_inicio', $datos['fecha_inicio']);
+        oci_bind_by_name($stid, ':fecha_terminacion', $datos['fecha_terminacion']);
+        oci_bind_by_name($stid, ':valor', $valor);
+        oci_bind_by_name($stid, ':observaciones', $observaciones);
+        oci_bind_by_name($stid, ':unidad', $unidad);
+        
+        // Ejecutar consulta
+        $r = oci_execute($stid, OCI_NO_AUTO_COMMIT);
+        if (!$r) {
+            $e = oci_error($stid);
+            error_log("Error al ejecutar consulta para asociar contratista: " . $e['message']);
+            oci_rollback($conn);
+            return false;
+        }
+        
+        // Confirmar transacción
+        $commit = oci_commit($conn);
+        
+        // Liberar recursos
+        oci_free_statement($stid);
+        oci_close($conn);
+        
+        return $commit;
+        
+    } catch (Exception $e) {
+        error_log("Error en asociarContratistaProyecto: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Obtiene detalles de un contratista por su identificación
+ * @param string $identificacion Número de identificación del contratista
  * @return array|null Datos del contratista o null si no existe
  */
-function obtenerContratistaPorId($identificacion) {
+function obtenerContratista($identificacion) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
         
         // Consulta SQL
         $sql = "SELECT 
-                    c.IDENTIFICACION as identificacion,
-                    c.NOMBRE1 as nombre1, 
-                    c.NOMBRE2 as nombre2,
-                    c.APELLIDO1 as apellido1,
-                    c.APELLIDO2 as apellido2,
-                    c.TIPO_PERSONA as tipo_persona,
-                    c.TIPO_NACIONALIDAD as tipo_nacionalidad,
-                    c.FECHA_NACIMIENTO as fecha_nacimiento,
-                    c.DIRECCION as direccion,
-                    c.TEL_FIJO as tel_fijo,
-                    c.TEL_CELULAR as tel_celular,
-                    c.CORREO as correo,
-                    c.GENERO as genero,
-                    c.ESTADO as estado
+                    c.IDENTIFICACION, c.NOMBRE1, c.NOMBRE2, c.APELLIDO1, c.APELLIDO2,
+                    c.TIPO_PERSONA, c.TIPO_NACIONALIDAD, c.FECHA_NACIMIENTO,
+                    c.DIRECCION, c.TEL_FIJO, c.TEL_CELULAR, c.CORREO, c.GENERO, c.ESTADO,
+                    tp.DESCRIPCION as TIPO_PERSONA_DESC,
+                    tn.DESCRIPCION as TIPO_NACIONALIDAD_DESC
                 FROM 
                     CONTRATOS_OPS c
+                    LEFT JOIN SIV_TIPO_PERSONA tp ON c.TIPO_PERSONA = tp.CODIGO
+                    LEFT JOIN SIV_NACIONALIDAD tn ON c.TIPO_NACIONALIDAD = tn.CODIGO
                 WHERE 
-                    c.IDENTIFICACION = :identificacion";
+                    c.IDENTIFICACION = :id
+                    AND c.ESTADO = 'A'";
         
         // Preparar consulta
         $stid = oci_parse($conn, $sql);
         if (!$stid) {
             $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
+            error_log("Error al preparar consulta para obtener contratista: " . $e['message']);
             return null;
         }
         
         // Vincular parámetros
-        oci_bind_by_name($stid, ':identificacion', $identificacion);
+        oci_bind_by_name($stid, ':id', $identificacion);
         
         // Ejecutar consulta
         $r = oci_execute($stid);
         if (!$r) {
             $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
+            error_log("Error al ejecutar consulta para obtener contratista: " . $e['message']);
             return null;
         }
         
         // Obtener resultado
         $row = oci_fetch_assoc($stid);
         
-        // Convertir claves a minúsculas
+        // Convertir claves a minúsculas (para mantener consistencia)
         if ($row) {
             $contratista = array();
             foreach ($row as $key => $value) {
                 $contratista[strtolower($key)] = $value;
+            }
+            
+            // Formato de nombre completo
+            if ($contratista['tipo_persona'] == 1) {
+                // Persona natural: nombre completo
+                $nombres = trim($contratista['nombre1'] . ' ' . ($contratista['nombre2'] ?? ''));
+                $apellidos = trim(($contratista['apellido1'] ?? '') . ' ' . ($contratista['apellido2'] ?? ''));
+                $contratista['nombre_completo'] = trim($nombres . ' ' . $apellidos);
+            } else {
+                // Persona jurídica: razón social
+                $contratista['nombre_completo'] = $contratista['nombre1'];
             }
         } else {
             $contratista = null;
@@ -160,7 +754,7 @@ function obtenerContratistaPorId($identificacion) {
         return $contratista;
         
     } catch (Exception $e) {
-        error_log("Error en obtenerContratistaPorId: " . $e->getMessage());
+        error_log("Error en obtenerContratista: " . $e->getMessage());
         return null;
     }
 }
@@ -260,80 +854,7 @@ function obtenerContratosContratista($identificacion) {
     }
 }
 
-/**
- * Crea un nuevo contratista en el sistema
- * @param array $datos Datos del contratista
- * @return bool|string True si se creó correctamente, mensaje de error en caso contrario
- */
-function crearContratista($datos) {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Verificar si el contratista ya existe
-        $sql_check = "SELECT COUNT(*) as existe FROM CONTRATOS_OPS WHERE IDENTIFICACION = :identificacion";
-        $stmt_check = oci_parse($conn, $sql_check);
-        oci_bind_by_name($stmt_check, ':identificacion', $datos['identificacion']);
-        oci_execute($stmt_check);
-        $row = oci_fetch_assoc($stmt_check);
-        
-        if ($row['EXISTE'] > 0) {
-            return "El contratista con identificación " . $datos['identificacion'] . " ya existe en el sistema.";
-        }
-        
-        // Consulta SQL para insertar
-        $sql = "INSERT INTO CONTRATOS_OPS (
-                    IDENTIFICACION, NOMBRE1, NOMBRE2, APELLIDO1, APELLIDO2, 
-                    TIPO_PERSONA, TIPO_NACIONALIDAD, FECHA_NACIMIENTO, 
-                    DIRECCION, TEL_FIJO, TEL_CELULAR, CORREO, GENERO, ESTADO
-                ) VALUES (
-                    :identificacion, :nombre1, :nombre2, :apellido1, :apellido2, 
-                    :tipo_persona, :tipo_nacionalidad, TO_DATE(:fecha_nacimiento, 'YYYY-MM-DD'), 
-                    :direccion, :tel_fijo, :tel_celular, :correo, :genero, 'A'
-                )";
-        
-        // Preparar consulta
-        $stmt = oci_parse($conn, $sql);
-        if (!$stmt) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return "Error al crear contratista: " . $e['message'];
-        }
-        
-        // Vincular parámetros
-        oci_bind_by_name($stmt, ':identificacion', $datos['identificacion']);
-        oci_bind_by_name($stmt, ':nombre1', $datos['nombre1']);
-        oci_bind_by_name($stmt, ':nombre2', $datos['nombre2']);
-        oci_bind_by_name($stmt, ':apellido1', $datos['apellido1']);
-        oci_bind_by_name($stmt, ':apellido2', $datos['apellido2']);
-        oci_bind_by_name($stmt, ':tipo_persona', $datos['tipo_persona']);
-        oci_bind_by_name($stmt, ':tipo_nacionalidad', $datos['tipo_nacionalidad']);
-        oci_bind_by_name($stmt, ':fecha_nacimiento', $datos['fecha_nacimiento']);
-        oci_bind_by_name($stmt, ':direccion', $datos['direccion']);
-        oci_bind_by_name($stmt, ':tel_fijo', $datos['tel_fijo']);
-        oci_bind_by_name($stmt, ':tel_celular', $datos['tel_celular']);
-        oci_bind_by_name($stmt, ':correo', $datos['correo']);
-        oci_bind_by_name($stmt, ':genero', $datos['genero']);
-        
-        // Ejecutar consulta
-        $r = oci_execute($stmt);
-        if (!$r) {
-            $e = oci_error($stmt);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return "Error al crear contratista: " . $e['message'];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stmt);
-        oci_close($conn);
-        
-        return true;
-        
-    } catch (Exception $e) {
-        error_log("Error en crearContratista: " . $e->getMessage());
-        return "Error general al crear contratista: " . $e->getMessage();
-    }
-}
+
 
 /**
  * Actualiza los datos de un contratista existente
@@ -592,282 +1113,7 @@ function calcularDuracionContrato($fecha_inicio, $fecha_fin) {
     }
 }
 
-/**
- * Obtiene la lista de tipos de persona
- * @return array Lista de tipos de persona
- */
-function obtenerTiposPersona() {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL
-        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
-                FROM SIV_TIPO_PERSONA
-                ORDER BY CODIGO";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
-        $tipos = [];
-        
-        while ($row = oci_fetch_assoc($stid)) {
-            $tipos[] = [
-                'codigo' => $row['CODIGO'],
-                'descripcion' => $row['DESCRIPCION']
-            ];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $tipos;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerTiposPersona: " . $e->getMessage());
-        return [
-            ['codigo' => 1, 'descripcion' => 'Persona Natural'],
-            ['codigo' => 2, 'descripcion' => 'Persona Jurídica']
-        ];
-    }
-}
 
-/**
- * Obtiene la lista de tipos de nacionalidad
- * @return array Lista de tipos de nacionalidad
- */
-function obtenerTiposNacionalidad() {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL
-        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
-                FROM SIV_NACIONALIDAD
-                ORDER BY CODIGO";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
-        $tipos = [];
-        
-        while ($row = oci_fetch_assoc($stid)) {
-            $tipos[] = [
-                'codigo' => $row['CODIGO'],
-                'descripcion' => $row['DESCRIPCION']
-            ];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $tipos;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerTiposNacionalidad: " . $e->getMessage());
-        return [
-            ['codigo' => 1, 'descripcion' => 'Colombiana'],
-            ['codigo' => 2, 'descripcion' => 'Extranjera']
-        ];
-    }
-}
-
-/**
- * Obtiene la lista de tipos de contrato
- * @return array Lista de tipos de contrato
- */
-function obtenerTiposContrato() {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL
-        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
-                FROM TIPO_CONTRATO
-                ORDER BY CODIGO";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
-        $tipos = [];
-        
-        while ($row = oci_fetch_assoc($stid)) {
-            $tipos[] = [
-                'codigo' => $row['CODIGO'],
-                'descripcion' => $row['DESCRIPCION']
-            ];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $tipos;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerTiposContrato: " . $e->getMessage());
-        return [
-            ['codigo' => 1, 'descripcion' => 'Prestación de Servicios'],
-            ['codigo' => 2, 'descripcion' => 'Obra'],
-            ['codigo' => 3, 'descripcion' => 'Suministro']
-        ];
-    }
-}
-
-/**
- * Obtiene la lista de tipos de vinculación
- * @return array Lista de tipos de vinculación
- */
-function obtenerTiposVinculacion() {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL
-        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
-                FROM VINCULACION
-                ORDER BY CODIGO";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
-        $tipos = [];
-        
-        while ($row = oci_fetch_assoc($stid)) {
-            $tipos[] = [
-                'codigo' => $row['CODIGO'],
-                'descripcion' => $row['DESCRIPCION']
-            ];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $tipos;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerTiposVinculacion: " . $e->getMessage());
-        return [
-            ['codigo' => 1, 'descripcion' => 'Planta'],
-            ['codigo' => 2, 'descripcion' => 'Contratista']
-        ];
-    }
-}
-
-/**
- * Obtiene la lista de facultades
- * @return array Lista de facultades
- */
-function obtenerFacultades() {
-    try {
-        // Obtener conexión
-        $conn = conectarOracle();
-        
-        // Consulta SQL
-        $sql = "SELECT CODIGO as codigo, DESCRIPCION as descripcion
-                FROM FACULTAD
-                ORDER BY DESCRIPCION";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
-        $facultades = [];
-        
-        while ($row = oci_fetch_assoc($stid)) {
-            $facultades[] = [
-                'codigo' => $row['CODIGO'],
-                'descripcion' => $row['DESCRIPCION']
-            ];
-        }
-        
-        // Liberar recursos
-        oci_free_statement($stid);
-        oci_close($conn);
-        
-        return $facultades;
-        
-    } catch (Exception $e) {
-        error_log("Error en obtenerFacultades: " . $e->getMessage());
-        return [
-            ['codigo' => 1, 'descripcion' => 'Facultad de Ingeniería'],
-            ['codigo' => 2, 'descripcion' => 'Facultad de Ciencias y Educación'],
-            ['codigo' => 3, 'descripcion' => 'Facultad de Medio Ambiente y Recursos Naturales']
-        ];
-    }
-}
 
 /**
  * Obtiene la lista de tipos de configuración
