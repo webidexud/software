@@ -1314,13 +1314,17 @@ function obtenerDetalleContratista($identificacion) {
         return null;
     }
 }
+
+
+
 /**
- * Obtiene las actas relacionadas con un contratista en un proyecto específico
+ * Obtiene las actas relacionadas con un contratista en un proyecto y contrato específico
  * @param string $contratistaId ID del contratista
  * @param int $proyectoId ID del proyecto
+ * @param int $contratoId Número de contrato específico (opcional)
  * @return array Lista de actas relacionadas con el contratista
  */
-function obtenerActasContratistaProyecto($contratistaId, $proyectoId) {
+function obtenerActasContratistaProyecto($contratistaId, $proyectoId, $contratoId = null) {
     try {
         // Obtener conexión
         $conn = conectarOracle();
@@ -1337,122 +1341,277 @@ function obtenerActasContratistaProyecto($contratistaId, $proyectoId) {
         }
         
         $anio_pro = $rowProy['ANIO_PRO'];
-        
-        // Obtener nombre del contratista para buscar menciones en las actas
-        $sqlContratista = "SELECT 
-                              NOMBRE1, NOMBRE2, APELLIDO1, APELLIDO2, TIPO_PERSONA 
-                           FROM 
-                              CONTRATOS_OPS 
-                           WHERE 
-                              IDENTIFICACION = :contratista_id";
-        $stidContratista = oci_parse($conn, $sqlContratista);
-        oci_bind_by_name($stidContratista, ':contratista_id', $contratistaId);
-        oci_execute($stidContratista);
-        $rowContratista = oci_fetch_assoc($stidContratista);
-        
-        if (!$rowContratista) {
-            return [];
-        }
-        
-        // Formar nombre del contratista para búsqueda
-        $nombreBusqueda = '';
-        if ($rowContratista['TIPO_PERSONA'] == 1) { // Persona natural
-            $nombreBusqueda = trim($rowContratista['NOMBRE1'] . ' ' . $rowContratista['APELLIDO1']);
-        } else {
-            $nombreBusqueda = trim($rowContratista['NOMBRE1']); // Razón social
-        }
-        
-        // Consulta SQL para obtener actas relacionadas con el contratista en el proyecto
-        // Esta consulta busca actas que coinciden con alguno de estos criterios:
-        // 1. Actas donde se menciona el ID del contratista en las observaciones
-        // 2. Actas donde se menciona el nombre del contratista en las observaciones
-        // 3. Actas generadas cerca de las fechas de inicio o terminación de los contratos del contratista
-        $sql = "SELECT DISTINCT
-                    a.ANIO_PRO,
-                    a.NUMERO_PRO,
-                    a.NUMERO_ACTA,
-                    a.TIPO_ACTA,
-                    t.DESCRIPCION as TIPO_DESCRIPCION,
-                    a.FECHA_ACTA,
-                    a.OBSERVA,
-                    a.ESTADO,
-                    d.ARCHIVO
-                FROM 
-                    ACTA_PROYECTO a
-                LEFT JOIN 
-                    TIPO_ACTA t ON a.TIPO_ACTA = t.CODIGO
-                LEFT JOIN 
-                    DOCUMENTO_PROYECTO d ON a.ANIO_PRO = d.ANIO_PRO 
-                                        AND a.NUMERO_PRO = d.NUMERO_PRO 
-                                        AND a.NUMERO_ACTA = d.NUMERO_DOC
-                                        AND a.TIPO_ACTA = d.TIPO_DOC
-                WHERE 
-                    a.ANIO_PRO = :anio_pro
-                    AND a.NUMERO_PRO = :numero_pro
-                    AND a.ESTADO = 'A'
-                    AND (
-                        -- Buscar menciones del contratista en observaciones (ID)
-                        UPPER(a.OBSERVA) LIKE UPPER('%' || :contratista_id || '%')
-                        OR
-                        -- Buscar menciones del nombre del contratista
-                        UPPER(a.OBSERVA) LIKE UPPER('%' || :nombre_busqueda || '%')
-                        OR
-                        -- Actas temporalmente relacionadas con contratos del contratista
-                        EXISTS (
-                            SELECT 1 
-                            FROM PROYECTO_OPS po
-                            WHERE po.IDENTIFICACION = :contratista_id
-                            AND po.ANIO_PRO = a.ANIO_PRO
-                            AND po.NUMERO_PRO = a.NUMERO_PRO
-                            AND (
-                                (a.FECHA_ACTA BETWEEN po.FECHA_INICIO - 30 AND po.FECHA_INICIO + 30)
-                                OR 
-                                (a.FECHA_ACTA BETWEEN po.FECHA_TERMINACION - 30 AND po.FECHA_TERMINACION + 30)
-                            )
-                        )
-                    )
-                ORDER BY 
-                    a.FECHA_ACTA DESC, a.NUMERO_ACTA DESC";
-        
-        // Preparar consulta
-        $stid = oci_parse($conn, $sql);
-        if (!$stid) {
-            $e = oci_error($conn);
-            error_log("Error al preparar consulta de actas relacionadas con contratista: " . $e['message']);
-            return [];
-        }
-        
-        // Vincular parámetros
-        oci_bind_by_name($stid, ':anio_pro', $anio_pro);
-        oci_bind_by_name($stid, ':numero_pro', $proyectoId);
-        oci_bind_by_name($stid, ':contratista_id', $contratistaId);
-        oci_bind_by_name($stid, ':nombre_busqueda', $nombreBusqueda);
-        
-        // Ejecutar consulta
-        $r = oci_execute($stid);
-        if (!$r) {
-            $e = oci_error($stid);
-            error_log("Error al ejecutar consulta de actas relacionadas con contratista: " . $e['message']);
-            return [];
-        }
-        
-        // Procesar resultados
         $actas = [];
         
-        while ($row = oci_fetch_assoc($stid)) {
-            // Convertir claves a minúsculas
-            $acta = array();
-            foreach ($row as $key => $value) {
-                $acta[strtolower($key)] = $value;
+        // Si no se especifica un contrato, obtener todos los contratos del contratista para este proyecto
+        if (empty($contratoId)) {
+            $sqlContratos = "SELECT NUMERO_CONTRATO 
+                            FROM PROYECTO_OPS 
+                            WHERE IDENTIFICACION = :contratista_id 
+                            AND ANIO_PRO = :anio_pro 
+                            AND NUMERO_PRO = :numero_pro";
+            
+            $stidContratos = oci_parse($conn, $sqlContratos);
+            oci_bind_by_name($stidContratos, ':contratista_id', $contratistaId);
+            oci_bind_by_name($stidContratos, ':anio_pro', $anio_pro);
+            oci_bind_by_name($stidContratos, ':numero_pro', $proyectoId);
+            oci_execute($stidContratos);
+            
+            $numerosContratos = [];
+            while ($rowContrato = oci_fetch_assoc($stidContratos)) {
+                $numerosContratos[] = $rowContrato['NUMERO_CONTRATO'];
             }
-            $actas[] = $acta;
+            
+            if (empty($numerosContratos)) {
+                return [];
+            }
+        } else {
+            // Si se especifica un contrato, usar solo ese
+            $numerosContratos = [$contratoId];
+        }
+        
+        // 1. Consulta para ACTA_CONTRATO 
+        if (!empty($numerosContratos)) {
+            foreach ($numerosContratos as $numeroContrato) {
+                // A. Primero buscar en ACTA_CONTRATO directamente
+                $sql_actas = "SELECT 
+                                ac.ANIO_PRO,
+                                ac.NUMERO_PRO,
+                                ac.ANIO_CONTRATO,
+                                ac.NUMERO_CONTRATO,
+                                ac.NUMERO_ACTA,
+                                ac.TIPO_ACTA,
+                                t.DESCRIPCION as TIPO_DESCRIPCION,
+                                ac.FECHA_ACTA,
+                                ac.OBSERVA,
+                                ac.ESTADO,
+                                ac.CONTRATISTA,
+                                ac.NUMERO_OP,
+                                ac.VALOR_OP,
+                                NULL as ARCHIVO
+                            FROM 
+                                ACTA_CONTRATO ac
+                            LEFT JOIN 
+                                TIPO_ACTA t ON ac.TIPO_ACTA = t.CODIGO
+                            WHERE 
+                                ac.ANIO_PRO = :anio_pro
+                                AND ac.NUMERO_PRO = :numero_pro
+                                AND ac.CONTRATISTA = :contratista_id
+                                AND ac.NUMERO_CONTRATO = :numero_contrato
+                                AND ac.ESTADO = 'A'";
+                
+                $stid_actas = oci_parse($conn, $sql_actas);
+                oci_bind_by_name($stid_actas, ':anio_pro', $anio_pro);
+                oci_bind_by_name($stid_actas, ':numero_pro', $proyectoId);
+                oci_bind_by_name($stid_actas, ':contratista_id', $contratistaId);
+                oci_bind_by_name($stid_actas, ':numero_contrato', $numeroContrato);
+                oci_execute($stid_actas);
+                
+                while ($row = oci_fetch_assoc($stid_actas)) {
+                    // Convertir claves a minúsculas
+                    $acta = array();
+                    foreach ($row as $key => $value) {
+                        $acta[strtolower($key)] = $value;
+                    }
+                    
+                    // Construir nombre de archivo para buscar en documentos
+                    $archivo_nombre = $anio_pro . $proyectoId . '_' . 
+                                    $anio_pro . $numeroContrato . '_rp_' . 
+                                    $acta['numero_acta'] . '.PDF';
+                    
+                    $acta['archivo'] = $archivo_nombre;
+                    $acta['archivo_url'] = "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $archivo_nombre;
+                    
+                    $actas[] = $acta;
+                }
+                
+                oci_free_statement($stid_actas);
+                
+                // B. Buscar documentos asociados en DOCUMENTO_CONTRATO
+                $sql_docs = "SELECT 
+                            dc.ANIO_PRO,
+                            dc.NUMERO_PRO,
+                            dc.ANIO_CONTRATO,
+                            dc.NUMERO_CONTRATO,
+                            dc.NUMERO_DOC as NUMERO_ACTA,
+                            dc.TIPO_DOC as TIPO_ACTA,
+                            td.DESCRIPCION as TIPO_DESCRIPCION,
+                            dc.FECHA_DOC as FECHA_ACTA,
+                            '' as OBSERVA,
+                            dc.ESTADO,
+                            dc.CONTRATISTA,
+                            dc.ARCHIVO
+                        FROM 
+                            DOCUMENTO_CONTRATO dc
+                        LEFT JOIN 
+                            TIPO_DOCUMENTO td ON dc.TIPO_DOC = td.CODIGO
+                        WHERE 
+                            dc.ANIO_PRO = :anio_pro
+                            AND dc.NUMERO_PRO = :numero_pro
+                            AND dc.CONTRATISTA = :contratista_id
+                            AND dc.NUMERO_CONTRATO = :numero_contrato
+                            AND dc.ESTADO = 'A'";
+                
+                $stid_docs = oci_parse($conn, $sql_docs);
+                oci_bind_by_name($stid_docs, ':anio_pro', $anio_pro);
+                oci_bind_by_name($stid_docs, ':numero_pro', $proyectoId);
+                oci_bind_by_name($stid_docs, ':contratista_id', $contratistaId);
+                oci_bind_by_name($stid_docs, ':numero_contrato', $numeroContrato);
+                oci_execute($stid_docs);
+                
+                while ($row = oci_fetch_assoc($stid_docs)) {
+                    // Convertir claves a minúsculas
+                    $documento = array();
+                    foreach ($row as $key => $value) {
+                        $documento[strtolower($key)] = $value;
+                    }
+                    
+                    // URL completa para el archivo
+                    if (!empty($documento['archivo'])) {
+                        $documento['archivo_url'] = "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $documento['archivo'];
+                    } else {
+                        $documento['archivo_url'] = "";
+                    }
+                    
+                    // Verificar si este documento no corresponde a un acta ya encontrada
+                    $documentoExistente = false;
+                    foreach ($actas as $acta) {
+                        if ($acta['numero_acta'] == $documento['numero_acta'] && 
+                            $acta['tipo_acta'] == $documento['tipo_acta'] &&
+                            $acta['numero_contrato'] == $documento['numero_contrato']) {
+                            $documentoExistente = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$documentoExistente) {
+                        $actas[] = $documento;
+                    }
+                }
+                
+                oci_free_statement($stid_docs);
+            }
+        }
+        
+        // 2. Adicionalmente, buscar directamente por el patrón de nombre de archivo en la base de datos
+        // (esto puede ser útil si hay inconsistencias en los registros)
+        $sql_buscar_archivo = "SELECT 
+                                dc.ANIO_PRO,
+                                dc.NUMERO_PRO,
+                                dc.ANIO_CONTRATO,
+                                dc.NUMERO_CONTRATO,
+                                dc.NUMERO_DOC as NUMERO_ACTA,
+                                dc.TIPO_DOC as TIPO_ACTA,
+                                td.DESCRIPCION as TIPO_DESCRIPCION,
+                                dc.FECHA_DOC as FECHA_ACTA,
+                                '' as OBSERVA,
+                                dc.ESTADO,
+                                dc.CONTRATISTA,
+                                dc.ARCHIVO
+                            FROM 
+                                DOCUMENTO_CONTRATO dc
+                            LEFT JOIN 
+                                TIPO_DOCUMENTO td ON dc.TIPO_DOC = td.CODIGO
+                            WHERE 
+                                dc.ANIO_PRO = :anio_pro
+                                AND dc.NUMERO_PRO = :numero_pro
+                                AND dc.ARCHIVO LIKE :patron_archivo
+                                AND dc.ESTADO = 'A'";
+                
+        foreach ($numerosContratos as $numeroContrato) {
+            $patron_archivo = $anio_pro . $proyectoId . '_' . $anio_pro . $numeroContrato . '_%';
+            
+            $stid_busqueda = oci_parse($conn, $sql_buscar_archivo);
+            oci_bind_by_name($stid_busqueda, ':anio_pro', $anio_pro);
+            oci_bind_by_name($stid_busqueda, ':numero_pro', $proyectoId);
+            oci_bind_by_name($stid_busqueda, ':patron_archivo', $patron_archivo);
+            oci_execute($stid_busqueda);
+            
+            while ($row = oci_fetch_assoc($stid_busqueda)) {
+                // Convertir claves a minúsculas
+                $documento = array();
+                foreach ($row as $key => $value) {
+                    $documento[strtolower($key)] = $value;
+                }
+                
+                // URL completa para el archivo
+                if (!empty($documento['archivo'])) {
+                    $documento['archivo_url'] = "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $documento['archivo'];
+                    
+                    // Verificar si este documento no ha sido ya incluido
+                    $documentoExistente = false;
+                    foreach ($actas as $acta) {
+                        if (isset($acta['archivo']) && $acta['archivo'] == $documento['archivo']) {
+                            $documentoExistente = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$documentoExistente) {
+                        $actas[] = $documento;
+                    }
+                }
+            }
+            
+            oci_free_statement($stid_busqueda);
+        }
+        
+        // 3. Último recurso: comprobar directamente en el sistema de archivos 
+        // (esto solo funcionará si el código se ejecuta en el mismo servidor)
+        $dir_actas = "/var/www/html/idexud/siexud/actascont/upload/";
+        if (function_exists('glob') && is_dir($dir_actas)) {
+            foreach ($numerosContratos as $numeroContrato) {
+                $patron_glob = $anio_pro . $proyectoId . '_' . $anio_pro . $numeroContrato . '_*.PDF';
+                $archivos = glob($dir_actas . $patron_glob);
+                
+                foreach ($archivos as $archivo) {
+                    $nombre_archivo = basename($archivo);
+                    
+                    // Verificar si este archivo ya está en la lista
+                    $archivoExistente = false;
+                    foreach ($actas as $acta) {
+                        if (isset($acta['archivo']) && $acta['archivo'] == $nombre_archivo) {
+                            $archivoExistente = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$archivoExistente) {
+                        // Extraer número y tipo de acta del nombre del archivo
+                        // Formato esperado: ANIOPRO_ANIOCONTRATO_TIPOABREVIADO_NUMEROACTA.PDF
+                        $parts = explode('_', $nombre_archivo);
+                        if (count($parts) >= 3) {
+                            $tipo_abreviado = $parts[2];
+                            $numero_acta = preg_replace('/\.PDF$/', '', $parts[3]);
+                            
+                            $actas[] = [
+                                'anio_pro' => $anio_pro,
+                                'numero_pro' => $proyectoId,
+                                'anio_contrato' => $anio_pro,
+                                'numero_contrato' => $numeroContrato,
+                                'numero_acta' => $numero_acta,
+                                'tipo_acta' => 0, // Desconocido
+                                'tipo_descripcion' => ucfirst($tipo_abreviado),
+                                'fecha_acta' => null,
+                                'observa' => 'Archivo encontrado en el sistema',
+                                'estado' => 'A',
+                                'contratista' => $contratistaId,
+                                'archivo' => $nombre_archivo,
+                                'archivo_url' => "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $nombre_archivo
+                            ];
+                        }
+                    }
+                }
+            }
         }
         
         // Liberar recursos
-        oci_free_statement($stid);
-        if (isset($stidContratista)) oci_free_statement($stidContratista);
         if (isset($stidProy)) oci_free_statement($stidProy);
+        if (isset($stidContratos)) oci_free_statement($stidContratos);
         oci_close($conn);
+        
+        // Depuración
+        error_log("Recuperadas " . count($actas) . " actas para contratista $contratistaId, proyecto $proyectoId" . (!empty($contratoId) ? ", contrato $contratoId" : ""));
         
         return $actas;
         
@@ -1461,7 +1620,6 @@ function obtenerActasContratistaProyecto($contratistaId, $proyectoId) {
         return [];
     }
 }
-
 
 
 
