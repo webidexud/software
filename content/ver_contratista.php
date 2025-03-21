@@ -1090,7 +1090,7 @@ body {
     </div>
 </div>
     
-   <!-- Pestaña de Actas Relacionadas -->
+    <!-- Pestaña de Actas Relacionadas -->
 <div class="tab-content" id="tab-actas">
     <div class="row">
         <div class="col-12">
@@ -1098,20 +1098,15 @@ body {
             <div class="custom-card">
                 <div class="custom-card-header d-flex justify-content-between align-items-center">
                     <h6 class="custom-card-title">
-                        <i class="fas fa-file-signature"></i> 
-                        <?php if (!empty($contrato_id)): ?>
-                            Actas y Documentos del Contrato N° <?php echo htmlspecialchars($contrato_id); ?>
-                        <?php else: ?>
-                            Actas y Documentos del Contratista
-                        <?php endif; ?>
+                        <i class="fas fa-file-signature"></i> Actas y Documentos del Contratista
                     </h6>
                     
-                    <!-- Agregar un contador de actas encontradas -->
+                    <!-- Agregar un debug counter visible para desarrollo -->
                     <?php if(!empty($actas)): ?>
                     <span class="badge bg-secondary">Encontradas: <?php echo count($actas); ?></span>
                     <?php endif; ?>
                     
-                    <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?><?php echo !empty($contrato_id) ? '&contrato_id='.$contrato_id : ''; ?>" class="action-button btn-success">
+                    <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?>" class="action-button btn-success">
                         <i class="fas fa-plus"></i> Nueva Acta
                     </a>
                 </div>
@@ -1123,15 +1118,10 @@ body {
                         </div>
                         <div class="empty-state-title">Sin actas relacionadas</div>
                         <div class="empty-state-desc">
-                            <?php if (!empty($contrato_id)): ?>
-                                No se encontraron actas relacionadas con este contrato.
-                            <?php else: ?>
-                                No se encontraron actas relacionadas con este contratista.
-                            <?php endif; ?>
-                            
+                            No se encontraron actas relacionadas con este contratista.
                             <div class="mt-3">
-                                <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?><?php echo !empty($contrato_id) ? '&contrato_id='.$contrato_id : ''; ?>" class="btn btn-sm btn-primary">
-                                    <i class="fas fa-plus me-1"></i> Agregar acta<?php echo !empty($contrato_id) ? ' para este contrato' : ''; ?>
+                                <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?>" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Agregar acta para este contratista
                                 </a>
                             </div>
                         </div>
@@ -1162,7 +1152,7 @@ body {
                                         ?>
                                     </td>
                                     <td>
-                                        <span class="badge bg-primary"><?php echo $acta['numero_contrato']; ?></span>
+                                        <?php echo $acta['numero_contrato']; ?>
                                     </td>
                                     <td><?php echo formatearFecha($acta['fecha_acta']); ?></td>
                                     <td>
@@ -1218,7 +1208,6 @@ body {
         </div>
     </div>
 </div>
-                
 
 <!-- Script para manejar las pestañas y otras funcionalidades -->
 <script>
