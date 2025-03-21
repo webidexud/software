@@ -13,6 +13,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id']) || !isset($_GET['proyecto_id
 
 $contratista_id = $_GET['id'];
 $proyecto_id = $_GET['proyecto_id'];
+$contrato_id = isset($_GET['contrato_id']) ? $_GET['contrato_id'] : null;
 
 // Incluir el modelo de contratista si existe
 if (file_exists('models/contratista_model.php')) {
@@ -42,12 +43,27 @@ if (!$contratista) {
 // Obtener contratos del contratista en el proyecto
 $contratos = obtenerContratosContratista($contratista_id, $proyecto_id);
 
-// Obtener actas relacionadas con el contratista en el proyecto
-$actas = obtenerActasContratistaProyecto($contratista_id, $proyecto_id);
+// Filtrar para mostrar solo el contrato específico si se proporcionó
+if (!empty($contrato_id) && !empty($contratos)) {
+    $contrato_seleccionado = null;
+    foreach ($contratos as $contrato) {
+        if ($contrato['numero_contrato'] == $contrato_id) {
+            $contrato_seleccionado = $contrato;
+            break;
+        }
+    }
+    
+    // Si se encontró el contrato específico, actualizar la variable para mostrar solo ese
+    if ($contrato_seleccionado) {
+        $contratos = [$contrato_seleccionado];
+    }
+}
 
+// Obtener actas relacionadas con el contratista en el proyecto y contrato específico
+$actas = obtenerActasContratistaProyecto($contratista_id, $proyecto_id, $contrato_id);
 
 // Si no hay actas relacionadas directamente, intentar obtener todas las actas del proyecto
-if (empty($actas) && function_exists('obtenerActasProyecto')) {
+if (empty($actas) && function_exists('obtenerActasProyecto') && empty($contrato_id)) {
     $actas = obtenerActasProyecto($proyecto_id);
     
     // Si hay muchas actas, limitamos a las más recientes para no saturar la vista
@@ -57,7 +73,7 @@ if (empty($actas) && function_exists('obtenerActasProyecto')) {
 }
 
 // Si aún no hay actas disponibles y el modelo de actas no está cargado, intentar cargarlo
-if (empty($actas) && file_exists('models/actas_proyecto_model.php')) {
+if (empty($actas) && file_exists('models/actas_proyecto_model.php') && empty($contrato_id)) {
     include_once 'models/actas_proyecto_model.php';
     
     // Verificar si ahora está disponible la función para obtener actas
@@ -641,76 +657,95 @@ body {
     </a>
     
     <!-- Encabezado del Contratista -->
-    <div class="contratista-header">
-        <div class="row">
-            <div class="col-md-8">
-                <div class="d-flex align-items-center mb-3">
-                    <div class="contratista-avatar">
-                        <i class="fas fa-user"></i>
-                    </div>
-                    <div class="ms-3">
-                        <h4 class="contratista-name"><?php echo htmlspecialchars($contratista['nombre_completo']); ?></h4>
-                        <div class="d-flex align-items-center">
-                            <?php 
-                            $tipo_contratista = '';
-                            if (!empty($contratista['tipo_persona_desc'])) {
-                                $tipo_contratista = $contratista['tipo_persona_desc'];
-                            } else if ($contratista['tipo_persona'] == 1) {
-                                $tipo_contratista = 'Persona Natural';
-                            } else if ($contratista['tipo_persona'] == 2) {
-                                $tipo_contratista = 'Persona Jurídica';
-                            } else {
-                                $tipo_contratista = 'Otro';
-                            }
-                            ?>
-                            <span class="tipo-badge"><?php echo htmlspecialchars($tipo_contratista); ?></span>
-                            <span class="ms-2 text-muted"><?php echo htmlspecialchars($contratista['identificacion']); ?></span>
-                        </div>
-                    </div>
+<div class="contratista-header">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="d-flex align-items-center mb-3">
+                <div class="contratista-avatar">
+                    <i class="fas fa-user"></i>
                 </div>
-                
-                <div class="contratista-info">
-                    <?php if(!empty($contratista['correo'])): ?>
-                    <div class="info-item">
-                        <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($contratista['correo']); ?>
+                <div class="ms-3">
+                    <h4 class="contratista-name"><?php echo htmlspecialchars($contratista['nombre_completo']); ?></h4>
+                    <div class="d-flex align-items-center">
+                        <?php 
+                        $tipo_contratista = '';
+                        if (!empty($contratista['tipo_persona_desc'])) {
+                            $tipo_contratista = $contratista['tipo_persona_desc'];
+                        } else if ($contratista['tipo_persona'] == 1) {
+                            $tipo_contratista = 'Persona Natural';
+                        } else if ($contratista['tipo_persona'] == 2) {
+                            $tipo_contratista = 'Persona Jurídica';
+                        } else {
+                            $tipo_contratista = 'Otro';
+                        }
+                        ?>
+                        <span class="tipo-badge"><?php echo htmlspecialchars($tipo_contratista); ?></span>
+                        <span class="ms-2 text-muted"><?php echo htmlspecialchars($contratista['identificacion']); ?></span>
+                        
+                        <?php if (!empty($contrato_id)): ?>
+                        <span class="ms-3 badge bg-primary">Contrato N° <?php echo htmlspecialchars($contrato_id); ?></span>
+                        <?php endif; ?>
                     </div>
-                    <?php endif; ?>
-                    
-                    <?php if(!empty($contratista['tel_celular'])): ?>
-                    <div class="info-item">
-                        <i class="fas fa-mobile-alt"></i> <?php echo htmlspecialchars($contratista['tel_celular']); ?>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if(!empty($contratista['tel_fijo'])): ?>
-                    <div class="info-item">
-                        <i class="fas fa-phone"></i> <?php echo htmlspecialchars($contratista['tel_fijo']); ?>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if(!empty($contratista['direccion'])): ?>
-                    <div class="info-item">
-                        <i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($contratista['direccion']); ?>
-                    </div>
-                    <?php endif; ?>
                 </div>
             </div>
-            <div class="col-md-4 mt-3 mt-md-0">
-                <div class="proyecto-box">
-                    <strong>Proyecto:</strong> <?php echo htmlspecialchars($proyecto['nombre']); ?>
-                    <div class="mt-2">
-                        <small class="text-muted">Código: <?php echo htmlspecialchars($proyecto['numero_pro_entidad']); ?></small>
-                    </div>
+            
+            <div class="contratista-info">
+                <?php if(!empty($contratista['correo'])): ?>
+                <div class="info-item">
+                    <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($contratista['correo']); ?>
+                </div>
+                <?php endif; ?>
+                
+                <?php if(!empty($contratista['tel_celular'])): ?>
+                <div class="info-item">
+                    <i class="fas fa-mobile-alt"></i> <?php echo htmlspecialchars($contratista['tel_celular']); ?>
+                </div>
+                <?php endif; ?>
+                
+                <?php if(!empty($contratista['tel_fijo'])): ?>
+                <div class="info-item">
+                    <i class="fas fa-phone"></i> <?php echo htmlspecialchars($contratista['tel_fijo']); ?>
+                </div>
+                <?php endif; ?>
+                
+                <?php if(!empty($contratista['direccion'])): ?>
+                <div class="info-item">
+                    <i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($contratista['direccion']); ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="col-md-4 mt-3 mt-md-0">
+            <div class="proyecto-box">
+                <strong>Proyecto:</strong> <?php echo htmlspecialchars($proyecto['nombre']); ?>
+                <div class="mt-2">
+                    <small class="text-muted">Código: <?php echo htmlspecialchars($proyecto['numero_pro_entidad']); ?></small>
                 </div>
                 
-                <div class="d-flex justify-content-end">
-                    <a href="main.php?page=editar_contratista&id=<?php echo $contratista_id; ?>&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-primary">
-                        <i class="fas fa-edit"></i> Editar Contratista
-                    </a>
+                <?php if (!empty($contrato_id) && !empty($contratos) && count($contratos) === 1): ?>
+                <hr>
+                <div>
+                    <strong>Valor del Contrato:</strong> <?php echo formatearMoneda($contratos[0]['valor']); ?>
                 </div>
+                <div>
+                    <strong>Tipo:</strong> <?php echo htmlspecialchars($contratos[0]['tipo_contrato_desc'] ?? 'No especificado'); ?>
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-info">
+                        <?php echo formatearFecha($contratos[0]['fecha_inicio']); ?> a <?php echo formatearFecha($contratos[0]['fecha_terminacion']); ?>
+                    </span>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <div class="d-flex justify-content-end mt-2">
+                <a href="main.php?page=editar_contratista&id=<?php echo $contratista_id; ?>&proyecto_id=<?php echo $proyecto_id; ?><?php echo !empty($contrato_id) ? '&contrato_id='.$contrato_id : ''; ?>" class="action-button btn-primary">
+                    <i class="fas fa-edit"></i> Editar Contratista
+                </a>
             </div>
         </div>
     </div>
+</div>
     
     <!-- Navegación por pestañas personalizada -->
     <div class="custom-tabs" id="contratistaTabs">
@@ -1055,7 +1090,7 @@ body {
     </div>
 </div>
     
-    <!-- Pestaña de Actas Relacionadas -->
+   <!-- Pestaña de Actas Relacionadas -->
 <div class="tab-content" id="tab-actas">
     <div class="row">
         <div class="col-12">
@@ -1063,15 +1098,20 @@ body {
             <div class="custom-card">
                 <div class="custom-card-header d-flex justify-content-between align-items-center">
                     <h6 class="custom-card-title">
-                        <i class="fas fa-file-signature"></i> Actas Relacionadas
+                        <i class="fas fa-file-signature"></i> 
+                        <?php if (!empty($contrato_id)): ?>
+                            Actas y Documentos del Contrato N° <?php echo htmlspecialchars($contrato_id); ?>
+                        <?php else: ?>
+                            Actas y Documentos del Contratista
+                        <?php endif; ?>
                     </h6>
                     
-                    <!-- Agregar un debug counter visible para desarrollo -->
+                    <!-- Agregar un contador de actas encontradas -->
                     <?php if(!empty($actas)): ?>
                     <span class="badge bg-secondary">Encontradas: <?php echo count($actas); ?></span>
                     <?php endif; ?>
                     
-                    <a href="main.php?page=agregar_acta&proyecto_id=<?php echo $proyecto_id; ?>" class="action-button btn-success">
+                    <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?><?php echo !empty($contrato_id) ? '&contrato_id='.$contrato_id : ''; ?>" class="action-button btn-success">
                         <i class="fas fa-plus"></i> Nueva Acta
                     </a>
                 </div>
@@ -1083,10 +1123,15 @@ body {
                         </div>
                         <div class="empty-state-title">Sin actas relacionadas</div>
                         <div class="empty-state-desc">
-                            No se encontraron actas relacionadas con este contratista.
+                            <?php if (!empty($contrato_id)): ?>
+                                No se encontraron actas relacionadas con este contrato.
+                            <?php else: ?>
+                                No se encontraron actas relacionadas con este contratista.
+                            <?php endif; ?>
+                            
                             <div class="mt-3">
-                                <a href="main.php?page=proyecto_individual&id=<?php echo $proyecto_id; ?>&tab=actas" class="btn btn-sm btn-primary">
-                                    Ver todas las actas del proyecto
+                                <a href="main.php?page=agregar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&id=<?php echo $contratista_id; ?><?php echo !empty($contrato_id) ? '&contrato_id='.$contrato_id : ''; ?>" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Agregar acta<?php echo !empty($contrato_id) ? ' para este contrato' : ''; ?>
                                 </a>
                             </div>
                         </div>
@@ -1098,6 +1143,7 @@ body {
                                 <tr>
                                     <th width="60">N°</th>
                                     <th>Tipo</th>
+                                    <th>Contrato</th>
                                     <th width="120">Fecha</th>
                                     <th>Observaciones</th>
                                     <th width="150" class="text-center">Acciones</th>
@@ -1115,10 +1161,13 @@ body {
                                         echo htmlspecialchars($tipoActaDesc); 
                                         ?>
                                     </td>
+                                    <td>
+                                        <span class="badge bg-primary"><?php echo $acta['numero_contrato']; ?></span>
+                                    </td>
                                     <td><?php echo formatearFecha($acta['fecha_acta']); ?></td>
                                     <td>
                                         <?php 
-                                        // Formatear las observaciones, destacando si mencionan el nombre o ID del contratista
+                                        // Formatear las observaciones
                                         $observa = trim($acta['observa'] ?? '');
                                         if (!empty($observa)) {
                                             // Si es muy larga, mostrar solo un fragmento
@@ -1129,17 +1178,6 @@ body {
                                             } else {
                                                 echo htmlspecialchars($observa);
                                             }
-                                            
-                                            // Si la observación menciona el ID del contratista, destacar
-                                            if (stripos($observa, $contratista_id) !== false) {
-                                                echo '<span class="badge bg-info ms-2">Menciona ID</span>';
-                                            }
-                                            
-                                            // Si menciona el nombre del contratista, destacar
-                                            if (stripos($observa, $contratista['nombre1']) !== false || 
-                                                stripos($observa, $contratista['apellido1']) !== false) {
-                                                echo '<span class="badge bg-primary ms-2">Menciona nombre</span>';
-                                            }
                                         } else {
                                             echo '<span class="text-muted">Sin observaciones</span>';
                                         }
@@ -1149,7 +1187,9 @@ body {
                                         <div class="btn-group">
                                             <?php if(!empty($acta['archivo'])): ?>
                                             <?php 
-                                            $urlActa = "http://siexud.udistrital.edu.co/idexud/siexud/actasproy/upload/" . $acta['archivo'];
+                                            $urlActa = !empty($acta['archivo_url']) ? 
+                                                $acta['archivo_url'] : 
+                                                "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $acta['archivo'];
                                             ?>
                                             <a href="<?php echo htmlspecialchars($urlActa); ?>" class="action-button btn-view" target="_blank" title="Ver Acta">
                                                 <i class="fas fa-eye"></i>
@@ -1158,7 +1198,7 @@ body {
                                                 <i class="fas fa-download"></i>
                                             </a>
                                             <?php else: ?>
-                                            <a href="main.php?page=editar_acta&proyecto_id=<?php echo $proyecto_id; ?>&numero_acta=<?php echo $acta['numero_acta']; ?>&tipo_acta=<?php echo $acta['tipo_acta']; ?>" class="action-button btn-warning" title="Editar Acta">
+                                            <a href="main.php?page=editar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&contratista_id=<?php echo $contratista_id; ?>&numero_contrato=<?php echo $acta['numero_contrato']; ?>&numero_acta=<?php echo $acta['numero_acta']; ?>&tipo_acta=<?php echo $acta['tipo_acta']; ?>" class="action-button btn-warning" title="Editar Acta">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <button disabled class="action-button btn-secondary" title="Documento no disponible">
@@ -1178,6 +1218,7 @@ body {
         </div>
     </div>
 </div>
+                
 
 <!-- Script para manejar las pestañas y otras funcionalidades -->
 <script>
