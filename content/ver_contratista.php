@@ -1175,8 +1175,9 @@ body {
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group">
-                                            <?php if(!empty($acta['archivo'])): ?>
+                                        <?php if(!empty($acta['archivo'])): ?>
                                             <?php 
+                                            // Asegúrate de que la URL correcta esté siendo utilizada
                                             $urlActa = !empty($acta['archivo_url']) ? 
                                                 $acta['archivo_url'] : 
                                                 "http://siexud.udistrital.edu.co/idexud/siexud/actascont/upload/" . $acta['archivo'];
@@ -1187,13 +1188,6 @@ body {
                                             <a href="<?php echo htmlspecialchars($urlActa); ?>" class="action-button btn-download" download title="Descargar Acta">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <?php else: ?>
-                                            <a href="main.php?page=editar_acta_contratista&proyecto_id=<?php echo $proyecto_id; ?>&contratista_id=<?php echo $contratista_id; ?>&numero_contrato=<?php echo $acta['numero_contrato']; ?>&numero_acta=<?php echo $acta['numero_acta']; ?>&tipo_acta=<?php echo $acta['tipo_acta']; ?>" class="action-button btn-warning" title="Editar Acta">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <button disabled class="action-button btn-secondary" title="Documento no disponible">
-                                                <i class="fas fa-file-alt"></i>
-                                            </button>
                                             <?php endif; ?>
                                         </div>
                                     </td>
